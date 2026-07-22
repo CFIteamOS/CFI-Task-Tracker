@@ -14,8 +14,8 @@ can update themselves. You get a password-gated admin dashboard.
 
    - [Category] Task text @Full Name @Another Person
    ```
-   A leading `[Category]` tag is optional and just gets stripped out of the
-   task text — it isn't tracked as data. Tagging multiple people on one line
+   Any leading `[Category]` tag is left as plain text at the start of the
+   task (nothing is parsed out of it). Tagging multiple people on one line
    creates a separate copy of that task on each of their checklists. Works
    with both a plainly typed `@Name` and Gmail's auto-inserted contact chip
    (`@Full Name <email@x.com>`).

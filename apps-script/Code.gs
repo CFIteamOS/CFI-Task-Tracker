@@ -209,11 +209,11 @@ function scanMoMEmails() {
 
 // Format (one bullet per line, under a "[Actions]" heading):
 //   - [Category] Task text @Full Name @Another Person
-// A leading [Category] tag is optional and just gets stripped out (not
-// stored — it's not tracked as data). Multiple @tags on one line means the
-// same task goes to each of those people separately. Also handles Gmail's
-// auto-inserted contact chip, which expands a typed "@Name" into
-// "@Full Name <email@x.com>".
+// Any leading [Category] tag is left in place as part of the task text
+// verbatim — it's just plain text here, not parsed out. Multiple @tags on
+// one line means the same task goes to each of those people separately.
+// Also handles Gmail's auto-inserted contact chip, which expands a typed
+// "@Name" into "@Full Name <email@x.com>".
 function parseActionsSection_(body) {
   const lines = body.split('\n');
   const startIdx = lines.findIndex(l => /^\s*\[Actions\]\s*$/i.test(l));
@@ -232,10 +232,7 @@ function parseActionsSection_(body) {
 
   const actions = [];
   actionLines.forEach(line => {
-    let rest = line.replace(/^\s*[-*]\s+/, '');
-
-    const catMatch = rest.match(/^\[([^\]]+)\]\s*/);
-    if (catMatch) rest = rest.slice(catMatch[0].length);
+    const rest = line.replace(/^\s*[-*]\s+/, '');
 
     const tagPattern = /@([^<@]+?)(?:\s*<[^>]*>)?(?=\s*@|\s*$)/g;
     const nameTags = [];
