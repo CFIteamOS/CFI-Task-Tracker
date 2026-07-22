@@ -11,6 +11,13 @@ function formatDate(value) {
   return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+function formatDateTime(value) {
+  if (!value) return '';
+  const d = new Date(value);
+  if (isNaN(d)) return '';
+  return d.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
 async function callApi(params) {
   const url = new URL(API_URL);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
@@ -26,6 +33,14 @@ async function postApi(body) {
   });
   return res.json();
 }
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+let expandedCommentsId = null;
 
 function renderTask(task, token, onChange) {
   const row = document.createElement('div');
@@ -50,12 +65,16 @@ function renderTask(task, token, onChange) {
           <span class="${badgeClass(task.status)}">${task.status}</span>
         </div>
         <div class="controls"></div>
+        <button class="comments-toggle" style="margin-top:8px">Comments</button>
+        <div class="comments-area" style="display:none; margin-top:10px"></div>
       </div>
     </div>
   `;
 
   const checkbox = row.querySelector('input[type="checkbox"]');
   const controls = row.querySelector('.controls');
+  const commentsToggle = row.querySelector('.comments-toggle');
+  const commentsArea = row.querySelector('.comments-area');
 
   function renderControls() {
     controls.innerHTML = '';
@@ -109,14 +128,45 @@ function renderTask(task, token, onChange) {
     await update(checkbox.checked ? 'Done' : 'Pending', null);
   });
 
+  async function loadComments() {
+    commentsArea.innerHTML = '<div class="comment-list">Loading...</div><div class="comment-add"><input type="text" placeholder="Add a comment"><button class="small-btn secondary">Add</button></div>';
+    const data = await postApi({ action: 'getComments', token, id: task.id });
+    const list = commentsArea.querySelector('.comment-list');
+    if (data.error) {
+      list.innerHTML = `<div class="error">${escapeHtml(data.error)}</div>`;
+      return;
+    }
+    list.innerHTML = data.comments.length
+      ? data.comments.map(c => `
+          <div class="comment-item">
+            <div class="comment-meta">${escapeHtml(c.author)} - ${formatDateTime(c.timestamp)}</div>
+            <div>${escapeHtml(c.text)}</div>
+          </div>
+        `).join('')
+      : '<div class="empty" style="padding:8px 0">No comments yet.</div>';
+
+    const input = commentsArea.querySelector('input');
+    const addBtn = commentsArea.querySelector('button');
+    addBtn.addEventListener('click', async () => {
+      const text = input.value.trim();
+      if (!text) return;
+      addBtn.disabled = true;
+      const result = await postApi({ action: 'addComment', token, id: task.id, text });
+      addBtn.disabled = false;
+      if (result.error) { alert(result.error); return; }
+      input.value = '';
+      loadComments();
+    });
+  }
+
+  commentsToggle.addEventListener('click', () => {
+    const isOpen = commentsArea.style.display !== 'none';
+    commentsArea.style.display = isOpen ? 'none' : 'block';
+    if (!isOpen) loadComments();
+  });
+
   renderControls();
   return row;
-}
-
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
 }
 
 async function init() {
@@ -124,6 +174,7 @@ async function init() {
   const token = params.get('token');
   const content = document.getElementById('content');
   const subtitle = document.getElementById('subtitle');
+  const ownTaskForm = document.getElementById('ownTaskForm');
 
   if (!token) {
     subtitle.textContent = '';
@@ -148,6 +199,8 @@ async function init() {
     return;
   }
 
+  ownTaskForm.style.display = 'flex';
+
   function rerender() {
     subtitle.textContent = `${data.owner} - ${data.tasks.filter(t => t.status !== 'Done').length} open`;
     content.innerHTML = '';
@@ -160,6 +213,28 @@ async function init() {
   }
 
   rerender();
+
+  document.getElementById('ownTaskBtn').addEventListener('click', async () => {
+    const textInput = document.getElementById('ownTaskText');
+    const dueInput = document.getElementById('ownTaskDueDate');
+    const text = textInput.value.trim();
+    if (!text) return;
+    const btn = document.getElementById('ownTaskBtn');
+    btn.disabled = true;
+    const result = await postApi({ action: 'createOwnTask', token, task: text, dueDate: dueInput.value });
+    btn.disabled = false;
+    if (result.error) {
+      alert('Could not add task: ' + result.error);
+      return;
+    }
+    data.tasks.push({
+      id: result.id, task: text, meeting: 'Added by owner', momDate: new Date().toISOString(),
+      status: 'Pending', dueDate: dueInput.value || null
+    });
+    textInput.value = '';
+    dueInput.value = '';
+    rerender();
+  });
 }
 
 init();

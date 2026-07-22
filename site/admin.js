@@ -11,6 +11,13 @@ function formatDate(value) {
   return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+function formatDateTime(value) {
+  if (!value) return '';
+  const d = new Date(value);
+  if (isNaN(d)) return '';
+  return d.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
 function badgeClass(status) {
   return 'badge ' + status.replace(/\s+/g, '-');
 }
@@ -19,19 +26,25 @@ let allTasks = [];
 let ownerNames = [];
 let currentFilter = 'all';
 let adminPassword = null;
+let editingTaskId = null;
+let expandedCommentsId = null;
+
+async function postAction(body) {
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(body)
+  });
+  return res.json();
+}
 
 async function loadDashboard(password) {
-  let res;
+  let data;
   try {
-    res = await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'adminList', password })
-    });
+    data = await postAction({ action: 'adminList', password });
   } catch (err) {
     throw new Error('unreachable');
   }
-  const data = await res.json();
   if (data.error) throw new Error(data.error);
   allTasks = data.tasks;
   ownerNames = data.owners || [];
@@ -49,8 +62,14 @@ function populateOwnerDropdown() {
 
 function render() {
   const summary = document.getElementById('summary');
-  const notDone = allTasks.filter(t => t.status !== 'Done').length;
-  summary.textContent = `${allTasks.length} total - ${notDone} not done`;
+  const total = allTasks.length;
+  const doneCount = allTasks.filter(t => t.status === 'Done').length;
+  const notDone = total - doneCount;
+  summary.textContent = `${total} total - ${notDone} not done`;
+
+  const pct = total ? Math.round((doneCount / total) * 100) : 0;
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('progressLabel').textContent = `${pct}% complete (${doneCount}/${total})`;
 
   let filtered = allTasks;
   if (currentFilter === 'open') filtered = allTasks.filter(t => t.status !== 'Done');
@@ -64,27 +83,80 @@ function render() {
 
   const rows = filtered
     .sort((a, b) => (a.status === 'Done') - (b.status === 'Done'))
-    .map(t => `
-      <tr>
-        <td>${escapeHtml(t.owner)}</td>
-        <td>${escapeHtml(t.task)}</td>
-        <td>${escapeHtml(t.meeting)}</td>
-        <td>${formatDate(t.momDate)}</td>
-        <td><span class="${badgeClass(t.status)}">${t.status}</span></td>
-        <td>${formatDate(t.revisedTimelineDate)}</td>
-        <td>${formatDate(t.dueDate)}</td>
-        <td>${t.reminderCount || 0}</td>
-      </tr>
-    `).join('');
+    .map(t => {
+      const mainRow = `
+        <tr data-id="${escapeHtml(t.id)}">
+          <td>${escapeHtml(t.owner)}</td>
+          <td>${escapeHtml(t.task)}</td>
+          <td>${escapeHtml(t.meeting)}</td>
+          <td>${formatDate(t.momDate)}</td>
+          <td><span class="${badgeClass(t.status)}">${t.status}</span></td>
+          <td>${formatDate(t.revisedTimelineDate)}</td>
+          <td>${formatDate(t.dueDate)}</td>
+          <td>${t.reminderCount || 0}</td>
+          <td>
+            <div class="row-actions">
+              <button class="small-btn secondary" data-action="edit">Edit</button>
+              <button class="small-btn danger" data-action="delete">Delete</button>
+              <button class="comments-toggle" data-action="comments">Comments</button>
+            </div>
+          </td>
+        </tr>
+      `;
+      const commentsRow = expandedCommentsId === t.id
+        ? `<tr class="comments-row" data-comments-for="${escapeHtml(t.id)}"><td colspan="9"><div class="comment-list" id="commentList-${escapeHtml(t.id)}">Loading...</div><div class="comment-add"><input type="text" placeholder="Add a comment" id="commentInput-${escapeHtml(t.id)}"><button class="small-btn secondary" data-action="addComment">Add</button></div></td></tr>`
+        : '';
+      return mainRow + commentsRow;
+    }).join('');
 
   table.innerHTML = `
     <table>
       <thead>
-        <tr><th>Owner</th><th>Task</th><th>Meeting</th><th>MoM date</th><th>Status</th><th>Revised to</th><th>Due</th><th>Reminders</th></tr>
+        <tr><th>Owner</th><th>Task</th><th>Meeting</th><th>MoM date</th><th>Status</th><th>Revised to</th><th>Due</th><th>Reminders</th><th>Actions</th></tr>
       </thead>
       <tbody>${rows}</tbody>
     </table>
   `;
+
+  if (expandedCommentsId) loadComments(expandedCommentsId);
+}
+
+async function loadComments(taskId) {
+  const listEl = document.getElementById(`commentList-${taskId}`);
+  if (!listEl) return;
+  const data = await postAction({ action: 'getComments', password: adminPassword, id: taskId });
+  if (data.error) {
+    listEl.innerHTML = `<div class="error">${escapeHtml(data.error)}</div>`;
+    return;
+  }
+  listEl.innerHTML = data.comments.length
+    ? data.comments.map(c => `
+        <div class="comment-item">
+          <div class="comment-meta">${escapeHtml(c.author)} - ${formatDateTime(c.timestamp)}</div>
+          <div>${escapeHtml(c.text)}</div>
+        </div>
+      `).join('')
+    : '<div class="empty" style="padding:8px 0">No comments yet.</div>';
+}
+
+function startEdit(task) {
+  editingTaskId = task.id;
+  document.getElementById('formTitle').textContent = `Editing task ${task.id}`;
+  document.getElementById('assignOwner').value = task.owner;
+  document.getElementById('assignTask').value = task.task;
+  document.getElementById('assignDueDate').value = task.dueDate ? new Date(task.dueDate).toISOString().slice(0, 10) : '';
+  document.getElementById('assignBtn').textContent = 'Save changes';
+  document.getElementById('cancelEditBtn').style.display = 'inline-block';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function stopEdit() {
+  editingTaskId = null;
+  document.getElementById('formTitle').textContent = 'Assign a new task';
+  document.getElementById('assignTask').value = '';
+  document.getElementById('assignDueDate').value = '';
+  document.getElementById('assignBtn').textContent = 'Assign task';
+  document.getElementById('cancelEditBtn').style.display = 'none';
 }
 
 document.getElementById('loginBtn').addEventListener('click', async () => {
@@ -115,6 +187,8 @@ document.querySelectorAll('.filters button').forEach(btn => {
   });
 });
 
+document.getElementById('cancelEditBtn').addEventListener('click', stopEdit);
+
 document.getElementById('assignBtn').addEventListener('click', async () => {
   const ownerName = document.getElementById('assignOwner').value;
   const task = document.getElementById('assignTask').value.trim();
@@ -133,26 +207,53 @@ document.getElementById('assignBtn').addEventListener('click', async () => {
 
   btn.disabled = true;
   try {
-    const res = await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'createTask', password: adminPassword, ownerName, task, dueDate })
-    });
-    const data = await res.json();
+    const body = editingTaskId
+      ? { action: 'updateTask', password: adminPassword, id: editingTaskId, ownerName, task, dueDate }
+      : { action: 'createTask', password: adminPassword, ownerName, task, dueDate };
+    const data = await postAction(body);
     if (data.error) {
       statusEl.textContent = data.error;
       statusEl.classList.add('error');
       return;
     }
-    statusEl.textContent = `Assigned to ${ownerName}.`;
+    statusEl.textContent = editingTaskId ? 'Saved.' : `Assigned to ${ownerName}.`;
     statusEl.classList.add('success');
-    document.getElementById('assignTask').value = '';
-    document.getElementById('assignDueDate').value = '';
+    stopEdit();
     await loadDashboard(adminPassword);
   } catch (err) {
     statusEl.textContent = 'Could not reach the server.';
     statusEl.classList.add('error');
   } finally {
     btn.disabled = false;
+  }
+});
+
+document.getElementById('table').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-action]');
+  if (!btn) return;
+  const row = btn.closest('tr[data-id]');
+  const taskId = row.dataset.id;
+  const task = allTasks.find(t => t.id === taskId);
+
+  if (btn.dataset.action === 'edit') {
+    startEdit(task);
+  } else if (btn.dataset.action === 'delete') {
+    if (!confirm(`Delete "${task.task}"? This can't be undone.`)) return;
+    const data = await postAction({ action: 'deleteTask', password: adminPassword, id: taskId });
+    if (data.error) { alert(data.error); return; }
+    await loadDashboard(adminPassword);
+  } else if (btn.dataset.action === 'comments') {
+    expandedCommentsId = expandedCommentsId === taskId ? null : taskId;
+    render();
+  } else if (btn.dataset.action === 'addComment') {
+    const input = document.getElementById(`commentInput-${taskId}`);
+    const text = input.value.trim();
+    if (!text) return;
+    btn.disabled = true;
+    const data = await postAction({ action: 'addComment', password: adminPassword, id: taskId, text });
+    btn.disabled = false;
+    if (data.error) { alert(data.error); return; }
+    input.value = '';
+    loadComments(taskId);
   }
 });

@@ -26,10 +26,18 @@ can update themselves. You get a password-gated admin dashboard.
 4. `sendReminders` runs every 7 days and nags anyone not Done/Blocked (honoring
    revised timelines), linking to the same permanent checklist.
 5. You open `admin.html`, enter your password, and see every owner's status in
-   one table, filterable by all / not-done / blocked / revised timeline. You
-   can also directly assign a new task to any existing owner from here (task
-   text + optional due date) — it appears on their checklist immediately and
-   flows through the same notification/reminder logic as MoM-parsed tasks.
+   one table, filterable by all / not-done / blocked / revised timeline, plus
+   an overall completion bar. From here you can:
+   - Assign a new task to any existing owner (task text + optional due date)
+     — appears on their checklist immediately, flows through the same
+     notification/reminder logic as MoM-parsed tasks.
+   - Edit or delete any existing task (click Edit on a row to load it into
+     the same form; changing the owner re-flags it as unnotified so they get
+     a heads-up about the reassignment).
+6. Owners can also add their own tasks from their checklist page (no owner
+   picker needed — it's always added under them), and everyone (owner or
+   admin) can leave comments on a task — a running, timestamped log, not a
+   single overwritable note. Useful for context like "why is this blocked."
 
 ## Branding
 

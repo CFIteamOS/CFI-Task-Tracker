@@ -2,10 +2,12 @@
  * MoM Task Tracker backend.
  *
  * Sheets used (created automatically by initializeSheets if missing):
- *   Tracker: TaskID | Owner | OwnerEmail | Task | Meeting | MoM Date | Status
- *            | Revised Timeline Date | Reminder Count | Last Updated | Notified | SourceKey
- *   Owners:  Name | Email | Token | WelcomeSent
+ *   Tracker:  TaskID | Owner | OwnerEmail | Task | Meeting | MoM Date | Status
+ *             | Revised Timeline Date | Reminder Count | Last Updated | Notified
+ *             | SourceKey | Due Date
+ *   Owners:   Name | Email | Token | WelcomeSent
  *   Unmatched: raw @name tags scanMoMEmails couldn't resolve to an email, for manual fixup
+ *   Comments: TaskID | Author | Text | Timestamp — a running log per task
  *
  * One-time setup (run once from the Apps Script editor):
  *   1. Create (or reuse) a Google Sheet to act as the database, and set its ID here:
@@ -20,6 +22,7 @@
 const TRACKER_SHEET = 'Tracker';
 const OWNERS_SHEET = 'Owners';
 const UNMATCHED_SHEET = 'Unmatched';
+const COMMENTS_SHEET = 'Comments';
 
 const NOTIFY_DELAY_DAYS = 3; // wait this many days after the MoM date before first notifying an owner
 
@@ -37,6 +40,7 @@ const TRACKER_HEADERS = [
 ];
 const OWNERS_HEADERS = ['Name', 'Email', 'Token', 'WelcomeSent'];
 const UNMATCHED_HEADERS = ['Name Tag', 'Task', 'Meeting', 'MoM Date', 'Seen At'];
+const COMMENTS_HEADERS = ['TaskID', 'Author', 'Text', 'Timestamp'];
 
 // ---------- setup ----------
 //
@@ -85,6 +89,7 @@ function initializeSheets() {
   ensureSheet_(ss, TRACKER_SHEET, TRACKER_HEADERS);
   ensureSheet_(ss, OWNERS_SHEET, OWNERS_HEADERS);
   ensureSheet_(ss, UNMATCHED_SHEET, UNMATCHED_HEADERS);
+  ensureSheet_(ss, COMMENTS_SHEET, COMMENTS_HEADERS);
 }
 
 // Creates the sheet with the given headers if it doesn't exist. If it does
@@ -380,6 +385,11 @@ function doPost(e) {
   if (payload.action === 'updateStatus') return jsonOut_(updateStatus_(payload));
   if (payload.action === 'adminList') return jsonOut_(getAdminList_(payload.password));
   if (payload.action === 'createTask') return jsonOut_(createTask_(payload));
+  if (payload.action === 'updateTask') return jsonOut_(updateTask_(payload));
+  if (payload.action === 'deleteTask') return jsonOut_(deleteTask_(payload));
+  if (payload.action === 'createOwnTask') return jsonOut_(createOwnTask_(payload));
+  if (payload.action === 'getComments') return jsonOut_(getComments_(payload));
+  if (payload.action === 'addComment') return jsonOut_(addComment_(payload));
   return jsonOut_({ error: 'Unknown action' });
 }
 
@@ -387,21 +397,23 @@ function jsonOut_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 
-function getTasksForToken_(token) {
-  if (!token) return { error: 'Missing token' };
-  const ss = getSpreadsheet_();
+// Looks up the owner name a token belongs to. Returns null if the token
+// doesn't match anyone in the Owners sheet.
+function resolveOwnerNameByToken_(ss, token) {
   const owners = ensureSheet_(ss, OWNERS_SHEET, OWNERS_HEADERS);
   const ownersData = owners.getDataRange().getValues();
   const tokenCol = OWNERS_HEADERS.indexOf('Token');
   const nameCol = OWNERS_HEADERS.indexOf('Name');
-
-  let ownerName = null;
   for (let i = 1; i < ownersData.length; i++) {
-    if (ownersData[i][tokenCol] === token) {
-      ownerName = ownersData[i][nameCol];
-      break;
-    }
+    if (ownersData[i][tokenCol] === token) return ownersData[i][nameCol];
   }
+  return null;
+}
+
+function getTasksForToken_(token) {
+  if (!token) return { error: 'Missing token' };
+  const ss = getSpreadsheet_();
+  const ownerName = resolveOwnerNameByToken_(ss, token);
   if (!ownerName) return { error: 'Invalid token' };
 
   const tracker = ensureSheet_(ss, TRACKER_SHEET, TRACKER_HEADERS);
@@ -433,18 +445,7 @@ function updateStatus_(payload) {
   lock.waitLock(30000);
   try {
     const ss = getSpreadsheet_();
-    const owners = ensureSheet_(ss, OWNERS_SHEET, OWNERS_HEADERS);
-    const ownersData = owners.getDataRange().getValues();
-    const tokenCol = OWNERS_HEADERS.indexOf('Token');
-    const nameCol = OWNERS_HEADERS.indexOf('Name');
-
-    let ownerName = null;
-    for (let i = 1; i < ownersData.length; i++) {
-      if (ownersData[i][tokenCol] === token) {
-        ownerName = ownersData[i][nameCol];
-        break;
-      }
-    }
+    const ownerName = resolveOwnerNameByToken_(ss, token);
     if (!ownerName) return { error: 'Invalid token' };
 
     const tracker = ensureSheet_(ss, TRACKER_SHEET, TRACKER_HEADERS);
@@ -501,6 +502,51 @@ function getAdminList_(password) {
   return { tasks, owners: ownerNames };
 }
 
+// ---------- shared helpers for creating/editing tasks ----------
+
+// Looks up an owner row by exact name match. Returns null if not found, or an
+// object with the row's 0-indexed position and email/token if found —
+// generating a token on the spot if that owner never had one yet.
+function findOwnerByName_(ss, ownerName) {
+  const owners = ensureSheet_(ss, OWNERS_SHEET, OWNERS_HEADERS);
+  const ownersData = owners.getDataRange().getValues();
+  const nameCol = OWNERS_HEADERS.indexOf('Name');
+  const emailCol = OWNERS_HEADERS.indexOf('Email');
+  const tokenCol = OWNERS_HEADERS.indexOf('Token');
+
+  for (let i = 1; i < ownersData.length; i++) {
+    if (ownersData[i][nameCol] !== ownerName) continue;
+    const email = ownersData[i][emailCol];
+    let token = ownersData[i][tokenCol];
+    if (!token) {
+      token = Utilities.getUuid();
+      owners.getRange(i + 1, tokenCol + 1).setValue(token);
+    }
+    return { row: i, email, token };
+  }
+  return null;
+}
+
+// Builds a Tracker row array (matching TRACKER_HEADERS order) from named
+// fields, so callers don't have to track column positions by hand.
+function buildTaskRow_(tracker, fields) {
+  const col = name => TRACKER_HEADERS.indexOf(name);
+  const row = new Array(TRACKER_HEADERS.length).fill('');
+  row[col('TaskID')] = generateTaskId_(tracker);
+  row[col('Owner')] = fields.owner;
+  row[col('OwnerEmail')] = fields.ownerEmail;
+  row[col('Task')] = fields.task;
+  row[col('Meeting')] = fields.meeting;
+  row[col('MoM Date')] = new Date();
+  row[col('Status')] = STATUS.PENDING;
+  row[col('Reminder Count')] = 0;
+  row[col('Last Updated')] = new Date();
+  row[col('Notified')] = fields.notified;
+  row[col('SourceKey')] = fields.sourceKey;
+  row[col('Due Date')] = fields.dueDate || '';
+  return row;
+}
+
 // ---------- admin: create/assign a task directly ----------
 
 function createTask_(payload) {
@@ -515,46 +561,196 @@ function createTask_(payload) {
   lock.waitLock(30000);
   try {
     const ss = getSpreadsheet_();
-    const owners = ensureSheet_(ss, OWNERS_SHEET, OWNERS_HEADERS);
-    const ownersData = owners.getDataRange().getValues();
-    const nameCol = OWNERS_HEADERS.indexOf('Name');
-    const emailCol = OWNERS_HEADERS.indexOf('Email');
-    const tokenCol = OWNERS_HEADERS.indexOf('Token');
-
-    let ownerRow = -1;
-    let email = null;
-    for (let i = 1; i < ownersData.length; i++) {
-      if (ownersData[i][nameCol] === ownerName) {
-        ownerRow = i;
-        email = ownersData[i][emailCol];
-        break;
-      }
-    }
-    if (ownerRow === -1) return { error: 'Unknown owner' };
-    if (!email) return { error: 'That owner has no email on file' };
-    if (!ownersData[ownerRow][tokenCol]) {
-      owners.getRange(ownerRow + 1, tokenCol + 1).setValue(Utilities.getUuid());
-    }
+    const owner = findOwnerByName_(ss, ownerName);
+    if (!owner) return { error: 'Unknown owner' };
+    if (!owner.email) return { error: 'That owner has no email on file' };
 
     const tracker = ensureSheet_(ss, TRACKER_SHEET, TRACKER_HEADERS);
-    const col = name => TRACKER_HEADERS.indexOf(name);
-    const row = new Array(TRACKER_HEADERS.length).fill('');
-    row[col('TaskID')] = generateTaskId_(tracker);
-    row[col('Owner')] = ownerName;
-    row[col('OwnerEmail')] = email;
-    row[col('Task')] = task;
-    row[col('Meeting')] = 'Assigned by admin';
-    row[col('MoM Date')] = new Date();
-    row[col('Status')] = STATUS.PENDING;
-    row[col('Reminder Count')] = 0;
-    row[col('Last Updated')] = new Date();
-    row[col('Notified')] = false;
-    row[col('SourceKey')] = `manual:${Utilities.getUuid()}`;
-    row[col('Due Date')] = payload.dueDate || '';
+    const row = buildTaskRow_(tracker, {
+      owner: ownerName,
+      ownerEmail: owner.email,
+      task,
+      meeting: 'Assigned by admin',
+      notified: false,
+      sourceKey: `manual:${Utilities.getUuid()}`,
+      dueDate: payload.dueDate
+    });
 
     tracker.appendRow(row);
-    return { ok: true, id: row[col('TaskID')] };
+    return { ok: true, id: row[TRACKER_HEADERS.indexOf('TaskID')] };
   } finally {
     lock.releaseLock();
+  }
+}
+
+// ---------- admin: edit or delete an existing task ----------
+
+function updateTask_(payload) {
+  const expected = PropertiesService.getScriptProperties().getProperty('ADMIN_PASSWORD');
+  if (!expected || payload.password !== expected) return { error: 'Unauthorized' };
+  if (!payload.id) return { error: 'Missing task id' };
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const ss = getSpreadsheet_();
+    const tracker = ensureSheet_(ss, TRACKER_SHEET, TRACKER_HEADERS);
+    const data = tracker.getDataRange().getValues();
+    const col = name => TRACKER_HEADERS.indexOf(name);
+
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][col('TaskID')] !== payload.id) continue;
+
+      if (payload.task) {
+        tracker.getRange(i + 1, col('Task') + 1).setValue(payload.task);
+      }
+      if (payload.dueDate !== undefined) {
+        tracker.getRange(i + 1, col('Due Date') + 1).setValue(payload.dueDate);
+      }
+      if (payload.ownerName && payload.ownerName !== data[i][col('Owner')]) {
+        const owner = findOwnerByName_(ss, payload.ownerName);
+        if (!owner) return { error: 'Unknown owner' };
+        if (!owner.email) return { error: 'That owner has no email on file' };
+        tracker.getRange(i + 1, col('Owner') + 1).setValue(payload.ownerName);
+        tracker.getRange(i + 1, col('OwnerEmail') + 1).setValue(owner.email);
+        tracker.getRange(i + 1, col('Notified') + 1).setValue(false); // reassigned — let them know
+      }
+      tracker.getRange(i + 1, col('Last Updated') + 1).setValue(new Date());
+      return { ok: true };
+    }
+    return { error: 'Task not found' };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function deleteTask_(payload) {
+  const expected = PropertiesService.getScriptProperties().getProperty('ADMIN_PASSWORD');
+  if (!expected || payload.password !== expected) return { error: 'Unauthorized' };
+  if (!payload.id) return { error: 'Missing task id' };
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const ss = getSpreadsheet_();
+    const tracker = ensureSheet_(ss, TRACKER_SHEET, TRACKER_HEADERS);
+    const data = tracker.getDataRange().getValues();
+    const col = name => TRACKER_HEADERS.indexOf(name);
+
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][col('TaskID')] !== payload.id) continue;
+      tracker.deleteRow(i + 1);
+      deleteCommentsForTask_(ss, payload.id);
+      return { ok: true };
+    }
+    return { error: 'Task not found' };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ---------- owner: add their own task ----------
+
+function createOwnTask_(payload) {
+  const { token, task } = payload;
+  if (!token || !task) return { error: 'Missing fields' };
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const ss = getSpreadsheet_();
+    const ownerName = resolveOwnerNameByToken_(ss, token);
+    if (!ownerName) return { error: 'Invalid token' };
+    const owner = findOwnerByName_(ss, ownerName);
+
+    const tracker = ensureSheet_(ss, TRACKER_SHEET, TRACKER_HEADERS);
+    const row = buildTaskRow_(tracker, {
+      owner: ownerName,
+      ownerEmail: owner.email,
+      task,
+      meeting: 'Added by owner',
+      notified: true, // they just added it themselves, no need to email them about it
+      sourceKey: `self:${Utilities.getUuid()}`,
+      dueDate: payload.dueDate
+    });
+
+    tracker.appendRow(row);
+    return { ok: true, id: row[TRACKER_HEADERS.indexOf('TaskID')] };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ---------- comments (running log per task) ----------
+
+// Authorizes a request against a specific task: an admin password always
+// works, or an owner token if that task actually belongs to them. Returns
+// { author } on success (the name to attribute a comment to), or { error }.
+function authorizeForTask_(ss, payload, taskId) {
+  if (payload.password) {
+    const expected = PropertiesService.getScriptProperties().getProperty('ADMIN_PASSWORD');
+    if (!expected || payload.password !== expected) return { error: 'Unauthorized' };
+    return { author: 'Admin' };
+  }
+  if (payload.token) {
+    const ownerName = resolveOwnerNameByToken_(ss, payload.token);
+    if (!ownerName) return { error: 'Invalid token' };
+    const tracker = ensureSheet_(ss, TRACKER_SHEET, TRACKER_HEADERS);
+    const data = tracker.getDataRange().getValues();
+    const col = name => TRACKER_HEADERS.indexOf(name);
+    const owns = data.some((row, i) => i > 0 && row[col('TaskID')] === taskId && row[col('Owner')] === ownerName);
+    if (!owns) return { error: 'Task does not belong to this owner' };
+    return { author: ownerName };
+  }
+  return { error: 'Missing credentials' };
+}
+
+function getComments_(payload) {
+  const { id } = payload;
+  if (!id) return { error: 'Missing task id' };
+  const ss = getSpreadsheet_();
+  const auth = authorizeForTask_(ss, payload, id);
+  if (auth.error) return auth;
+
+  const sheet = ensureSheet_(ss, COMMENTS_SHEET, COMMENTS_HEADERS);
+  const data = sheet.getDataRange().getValues();
+  const col = name => COMMENTS_HEADERS.indexOf(name);
+
+  const comments = [];
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][col('TaskID')] !== id) continue;
+    comments.push({
+      author: data[i][col('Author')],
+      text: data[i][col('Text')],
+      timestamp: data[i][col('Timestamp')]
+    });
+  }
+  return { comments };
+}
+
+function addComment_(payload) {
+  const { id, text } = payload;
+  if (!id || !text) return { error: 'Missing fields' };
+  const ss = getSpreadsheet_();
+  const auth = authorizeForTask_(ss, payload, id);
+  if (auth.error) return auth;
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const sheet = ensureSheet_(ss, COMMENTS_SHEET, COMMENTS_HEADERS);
+    sheet.appendRow([id, auth.author, text, new Date()]);
+    return { ok: true };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function deleteCommentsForTask_(ss, taskId) {
+  const sheet = ensureSheet_(ss, COMMENTS_SHEET, COMMENTS_HEADERS);
+  const data = sheet.getDataRange().getValues();
+  const col = COMMENTS_HEADERS.indexOf('TaskID');
+  for (let i = data.length - 1; i >= 1; i--) {
+    if (data[i][col] === taskId) sheet.deleteRow(i + 1);
   }
 }

@@ -21,8 +21,10 @@
     <div id="dashboard" style="display:none">
       <h1>Task tracker</h1>
       <p class="subtitle" id="summary"></p>
+      <div class="progress-bar"><div class="progress-bar-fill" id="progressFill" style="width:0%"></div></div>
+      <p class="progress-label" id="progressLabel"></p>
 
-      <div class="section-title">Assign a new task</div>
+      <div class="section-title" id="formTitle">Assign a new task</div>
       <div class="assign-form">
         <div class="row">
           <select id="assignOwner"></select>
@@ -31,6 +33,7 @@
         </div>
         <div class="row">
           <button id="assignBtn">Assign task</button>
+          <button id="cancelEditBtn" class="small-btn secondary" style="display:none">Cancel edit</button>
           <span class="assign-form-status" id="assignStatus"></span>
         </div>
       </div>
