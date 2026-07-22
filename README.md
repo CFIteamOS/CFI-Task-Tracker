@@ -67,15 +67,18 @@ on a container binding.
    URL from step 1.5.
 
 ### 3. GitHub Pages
-1. Create a new GitHub repo (public, unless you have GitHub Pro/Enterprise for
-   private Pages) and push the contents of the `site/` folder to its root
-   (or push the whole project and point Pages at `/site`).
-2. Repo Settings → Pages → deploy from the branch/folder containing
-   `index.html`.
-3. Your owner checklist lives at `https://<you>.github.io/<repo>/` and the
-   admin dashboard at `https://<you>.github.io/<repo>/admin.html`.
-4. Go back to step 1.7 and set `setSiteBaseUrl` to this exact URL if you
-   haven't already.
+1. Push this whole project to a GitHub repo (public, unless you have GitHub
+   Pro/Enterprise for private Pages) — GitHub Pages' branch-deploy source can
+   only be `/(root)` or `/docs`, not an arbitrary folder like `/site`, so we
+   serve the whole repo from root rather than moving `site/` around.
+2. Repo Settings → Pages → Source: **Deploy from a branch** → Branch **main**,
+   folder **`/ (root)`** → Save.
+3. Your owner checklist lives at `https://<you>.github.io/<repo>/site/index.html`
+   and the admin dashboard at `https://<you>.github.io/<repo>/site/admin.html`
+   (note the `/site/` segment, since Pages is serving the repo root).
+4. Go back to step 1.6 and run `setupSiteUrl` with
+   `https://<you>.github.io/<repo>/site/` (the base, so the emailed link
+   becomes `.../site/index.html?token=...`).
 
 ## Notes on security
 - Per-owner tokens and the admin password are the only real secrets. Neither
