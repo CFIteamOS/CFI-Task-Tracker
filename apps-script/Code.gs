@@ -2,12 +2,18 @@
  * MoM Task Tracker backend.
  *
  * Sheets used (created automatically by initializeSheets if missing):
- *   Tracker:  TaskID | Owner | OwnerEmail | Task | Meeting | MoM Date | Status
- *             | Revised Timeline Date | Reminder Count | Last Updated | Notified
- *             | SourceKey | Due Date | Category
+ *   Tracker:  TaskID | Owner | OwnerEmail | Comments | Task | Meeting | MoM Date
+ *             | Status | Revised Timeline Date | Reminder Count | Last Updated
+ *             | Notified | SourceKey | Category
  *   Owners:   Name | Email | Token | WelcomeSent
  *   Unmatched: raw @name tags scanMoMEmails couldn't resolve to an email, for manual fixup
- *   Comments: TaskID | Author | Text | Timestamp — a running log per task
+ *   Comments: TaskID | Author | Text | Timestamp — the full running log per task
+ *             (the Tracker sheet's "Comments" column is just a synced summary
+ *             for at-a-glance reading; this sheet is the source of truth)
+ *
+ * Column order in the Tracker sheet can be freely rearranged by hand (e.g. to
+ * move Comments before Task) — every function below looks up columns by name
+ * from the sheet's actual header row, never by a fixed position.
  *
  * One-time setup (run once from the Apps Script editor):
  *   1. Create (or reuse) a Google Sheet to act as the database, and set its ID here:
@@ -34,10 +40,12 @@ const STATUS = {
   DONE: 'Done'
 };
 
+// Order here only matters for a brand-new sheet (this is the order columns
+// get created in). On an existing sheet, new headers are appended wherever
+// there's room, and you're free to drag columns around afterward.
 const TRACKER_HEADERS = [
-  'TaskID', 'Owner', 'OwnerEmail', 'Task', 'Meeting', 'MoM Date', 'Status',
-  'Revised Timeline Date', 'Reminder Count', 'Last Updated', 'Notified', 'SourceKey', 'Due Date',
-  'Category'
+  'TaskID', 'Owner', 'OwnerEmail', 'Comments', 'Task', 'Meeting', 'MoM Date', 'Status',
+  'Revised Timeline Date', 'Reminder Count', 'Last Updated', 'Notified', 'SourceKey', 'Category'
 ];
 const OWNERS_HEADERS = ['Name', 'Email', 'Token', 'WelcomeSent'];
 const UNMATCHED_HEADERS = ['Name Tag', 'Task', 'Meeting', 'MoM Date', 'Seen At'];
@@ -96,7 +104,8 @@ function initializeSheets() {
 // Creates the sheet with the given headers if it doesn't exist. If it does
 // exist but is missing headers this code now expects (e.g. after adding a new
 // column), those are appended to the end of the existing header row so older
-// live sheets pick up schema changes automatically.
+// live sheets pick up schema changes automatically. You can then freely drag
+// that column wherever you want — nothing below assumes a fixed position.
 function ensureSheet_(ss, name, headers) {
   let sheet = ss.getSheetByName(name);
   if (!sheet) {
@@ -114,12 +123,32 @@ function ensureSheet_(ss, name, headers) {
   return sheet;
 }
 
+// Reads a sheet's actual current header row (row 1), so column lookups always
+// reflect reality even if you've manually reordered or the sheet has extra
+// columns beyond what this script created.
+function getHeaderRow_(sheet) {
+  const lastCol = Math.max(sheet.getLastColumn(), 1);
+  return sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+}
+
+// Builds a row array matching a sheet's actual header order from a
+// name -> value map, so appendRow() always lands values in the right column
+// regardless of how the sheet's columns happen to be arranged.
+function buildRowByHeaders_(headerRow, fieldsByName) {
+  return headerRow.map(header =>
+    Object.prototype.hasOwnProperty.call(fieldsByName, header) ? fieldsByName[header] : ''
+  );
+}
+
 // getRange() throws if asked for 0 rows, which happens whenever a sheet has
-// only its header row (no data yet) — this guards that case.
-function getColumnValues_(sheet, col) {
+// only its header row (no data yet) — this guards that case. Column is
+// looked up by name against the sheet's actual header row.
+function getColumnValues_(sheet, columnName) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
-  return sheet.getRange(2, col, lastRow - 1, 1).getValues().flat();
+  const colIndex = getHeaderRow_(sheet).indexOf(columnName) + 1;
+  if (colIndex === 0) return [];
+  return sheet.getRange(2, colIndex, lastRow - 1, 1).getValues().flat();
 }
 
 function setAdminPassword(password) {
@@ -131,9 +160,8 @@ function setAdminPassword(password) {
 function scanMoMEmails() {
   const ss = getSpreadsheet_();
   const tracker = ensureSheet_(ss, TRACKER_SHEET, TRACKER_HEADERS);
-  const existingKeys = new Set(
-    getColumnValues_(tracker, TRACKER_HEADERS.indexOf('SourceKey') + 1).filter(String)
-  );
+  const headerRow = getHeaderRow_(tracker);
+  const existingKeys = new Set(getColumnValues_(tracker, 'SourceKey').filter(String));
 
   const threads = GmailApp.search(getMomSearchQuery_());
   const newRows = [];
@@ -156,28 +184,27 @@ function scanMoMEmails() {
           return;
         }
 
-        const col = name => TRACKER_HEADERS.indexOf(name);
-        const row = new Array(TRACKER_HEADERS.length).fill('');
-        row[col('TaskID')] = generateTaskId_(tracker);
-        row[col('Owner')] = owner.name;
-        row[col('OwnerEmail')] = owner.email;
-        row[col('Task')] = action.task;
-        row[col('Meeting')] = meetingTitle;
-        row[col('MoM Date')] = momDate;
-        row[col('Status')] = STATUS.PENDING;
-        row[col('Reminder Count')] = 0;
-        row[col('Last Updated')] = new Date();
-        row[col('Notified')] = false;
-        row[col('SourceKey')] = sourceKey;
-        row[col('Category')] = action.category || '';
-        newRows.push(row);
+        newRows.push(buildRowByHeaders_(headerRow, {
+          TaskID: generateTaskId_(tracker),
+          Owner: owner.name,
+          OwnerEmail: owner.email,
+          Task: action.task,
+          Meeting: meetingTitle,
+          'MoM Date': momDate,
+          Status: STATUS.PENDING,
+          'Reminder Count': 0,
+          'Last Updated': new Date(),
+          Notified: false,
+          SourceKey: sourceKey,
+          Category: action.category || ''
+        }));
         existingKeys.add(sourceKey);
       });
     });
   });
 
   if (newRows.length) {
-    tracker.getRange(tracker.getLastRow() + 1, 1, newRows.length, TRACKER_HEADERS.length).setValues(newRows);
+    tracker.getRange(tracker.getLastRow() + 1, 1, newRows.length, headerRow.length).setValues(newRows);
   }
 }
 
@@ -256,7 +283,7 @@ function logUnmatched_(ss, nameTag, task, meetingTitle, momDate) {
 
 function generateTaskId_(tracker) {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const existing = new Set(getColumnValues_(tracker, 1));
+  const existing = new Set(getColumnValues_(tracker, 'TaskID'));
   let id;
   do {
     id = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
@@ -273,19 +300,16 @@ function notifyOwners() {
   const baseUrl = getSiteBaseUrl_();
 
   const trackerData = tracker.getDataRange().getValues();
-  const notifiedCol = TRACKER_HEADERS.indexOf('Notified');
-  const ownerCol = TRACKER_HEADERS.indexOf('Owner');
-  const taskCol = TRACKER_HEADERS.indexOf('Task');
-  const momDateCol = TRACKER_HEADERS.indexOf('MoM Date');
+  const col = name => trackerData[0].indexOf(name);
   const notifyCutoff = new Date(Date.now() - NOTIFY_DELAY_DAYS * 24 * 60 * 60 * 1000);
 
   const pendingByOwner = {};
   for (let i = 1; i < trackerData.length; i++) {
-    if (trackerData[i][notifiedCol] === true) continue;
-    if (new Date(trackerData[i][momDateCol]) > notifyCutoff) continue; // not old enough yet, catch it on a later run
-    const owner = trackerData[i][ownerCol];
+    if (trackerData[i][col('Notified')] === true) continue;
+    if (new Date(trackerData[i][col('MoM Date')]) > notifyCutoff) continue; // not old enough yet, catch it on a later run
+    const owner = trackerData[i][col('Owner')];
     if (!pendingByOwner[owner]) pendingByOwner[owner] = [];
-    pendingByOwner[owner].push({ row: i + 1, task: trackerData[i][taskCol] });
+    pendingByOwner[owner].push({ row: i + 1, task: trackerData[i][col('Task')] });
   }
 
   const ownersData = owners.getDataRange().getValues();
@@ -293,6 +317,7 @@ function notifyOwners() {
   const emailCol = OWNERS_HEADERS.indexOf('Email');
   const tokenCol = OWNERS_HEADERS.indexOf('Token');
   const welcomeCol = OWNERS_HEADERS.indexOf('WelcomeSent');
+  const notifiedColIndex = col('Notified') + 1;
 
   Object.keys(pendingByOwner).forEach(ownerName => {
     for (let i = 1; i < ownersData.length; i++) {
@@ -323,7 +348,7 @@ function notifyOwners() {
         });
       }
 
-      items.forEach(it => tracker.getRange(it.row, notifiedCol + 1).setValue(true));
+      items.forEach(it => tracker.getRange(it.row, notifiedColIndex).setValue(true));
       break;
     }
   });
@@ -353,7 +378,7 @@ function sendReminders() {
   const baseUrl = getSiteBaseUrl_();
 
   const data = tracker.getDataRange().getValues();
-  const col = name => TRACKER_HEADERS.indexOf(name);
+  const col = name => data[0].indexOf(name);
   const today = new Date();
 
   const dueByOwner = {};
@@ -373,6 +398,7 @@ function sendReminders() {
   const nameCol = OWNERS_HEADERS.indexOf('Name');
   const emailCol = OWNERS_HEADERS.indexOf('Email');
   const tokenCol = OWNERS_HEADERS.indexOf('Token');
+  const reminderColIndex = col('Reminder Count') + 1;
 
   Object.keys(dueByOwner).forEach(ownerName => {
     for (let i = 1; i < ownersData.length; i++) {
@@ -391,7 +417,7 @@ function sendReminders() {
       });
 
       items.forEach(it => {
-        const reminderCountCell = tracker.getRange(it.row, col('Reminder Count') + 1);
+        const reminderCountCell = tracker.getRange(it.row, reminderColIndex);
         reminderCountCell.setValue((reminderCountCell.getValue() || 0) + 1);
       });
       break;
@@ -451,7 +477,7 @@ function getTasksForToken_(token) {
 
   const tracker = ensureSheet_(ss, TRACKER_SHEET, TRACKER_HEADERS);
   const data = tracker.getDataRange().getValues();
-  const col = name => TRACKER_HEADERS.indexOf(name);
+  const col = name => data[0].indexOf(name);
 
   const tasks = [];
   for (let i = 1; i < data.length; i++) {
@@ -463,7 +489,6 @@ function getTasksForToken_(token) {
       momDate: data[i][col('MoM Date')],
       status: data[i][col('Status')],
       revisedTimelineDate: data[i][col('Revised Timeline Date')],
-      dueDate: data[i][col('Due Date')],
       category: data[i][col('Category')]
     });
   }
@@ -484,7 +509,7 @@ function updateStatus_(payload) {
 
     const tracker = ensureSheet_(ss, TRACKER_SHEET, TRACKER_HEADERS);
     const data = tracker.getDataRange().getValues();
-    const col = name => TRACKER_HEADERS.indexOf(name);
+    const col = name => data[0].indexOf(name);
 
     for (let i = 1; i < data.length; i++) {
       if (data[i][col('TaskID')] !== id) continue;
@@ -510,7 +535,7 @@ function getAdminList_(password) {
   const ss = getSpreadsheet_();
   const tracker = ensureSheet_(ss, TRACKER_SHEET, TRACKER_HEADERS);
   const data = tracker.getDataRange().getValues();
-  const col = name => TRACKER_HEADERS.indexOf(name);
+  const col = name => data[0].indexOf(name);
 
   const tasks = [];
   for (let i = 1; i < data.length; i++) {
@@ -524,7 +549,6 @@ function getAdminList_(password) {
       revisedTimelineDate: data[i][col('Revised Timeline Date')],
       reminderCount: data[i][col('Reminder Count')],
       lastUpdated: data[i][col('Last Updated')],
-      dueDate: data[i][col('Due Date')],
       category: data[i][col('Category')]
     });
   }
@@ -562,24 +586,23 @@ function findOwnerByName_(ss, ownerName) {
   return null;
 }
 
-// Builds a Tracker row array (matching TRACKER_HEADERS order) from named
-// fields, so callers don't have to track column positions by hand.
+// Builds a Tracker row from named fields, matching whatever the sheet's
+// actual column order currently is.
 function buildTaskRow_(tracker, fields) {
-  const col = name => TRACKER_HEADERS.indexOf(name);
-  const row = new Array(TRACKER_HEADERS.length).fill('');
-  row[col('TaskID')] = generateTaskId_(tracker);
-  row[col('Owner')] = fields.owner;
-  row[col('OwnerEmail')] = fields.ownerEmail;
-  row[col('Task')] = fields.task;
-  row[col('Meeting')] = fields.meeting;
-  row[col('MoM Date')] = new Date();
-  row[col('Status')] = STATUS.PENDING;
-  row[col('Reminder Count')] = 0;
-  row[col('Last Updated')] = new Date();
-  row[col('Notified')] = fields.notified;
-  row[col('SourceKey')] = fields.sourceKey;
-  row[col('Due Date')] = fields.dueDate || '';
-  return row;
+  const headerRow = getHeaderRow_(tracker);
+  return buildRowByHeaders_(headerRow, {
+    TaskID: generateTaskId_(tracker),
+    Owner: fields.owner,
+    OwnerEmail: fields.ownerEmail,
+    Task: fields.task,
+    Meeting: fields.meeting,
+    'MoM Date': new Date(),
+    Status: STATUS.PENDING,
+    'Reminder Count': 0,
+    'Last Updated': new Date(),
+    Notified: fields.notified,
+    SourceKey: fields.sourceKey
+  });
 }
 
 // ---------- admin: create/assign a task directly ----------
@@ -607,12 +630,11 @@ function createTask_(payload) {
       task,
       meeting: 'Assigned by admin',
       notified: false,
-      sourceKey: `manual:${Utilities.getUuid()}`,
-      dueDate: payload.dueDate
+      sourceKey: `manual:${Utilities.getUuid()}`
     });
 
     tracker.appendRow(row);
-    return { ok: true, id: row[TRACKER_HEADERS.indexOf('TaskID')] };
+    return { ok: true, id: row[getHeaderRow_(tracker).indexOf('TaskID')] };
   } finally {
     lock.releaseLock();
   }
@@ -631,16 +653,13 @@ function updateTask_(payload) {
     const ss = getSpreadsheet_();
     const tracker = ensureSheet_(ss, TRACKER_SHEET, TRACKER_HEADERS);
     const data = tracker.getDataRange().getValues();
-    const col = name => TRACKER_HEADERS.indexOf(name);
+    const col = name => data[0].indexOf(name);
 
     for (let i = 1; i < data.length; i++) {
       if (data[i][col('TaskID')] !== payload.id) continue;
 
       if (payload.task) {
         tracker.getRange(i + 1, col('Task') + 1).setValue(payload.task);
-      }
-      if (payload.dueDate !== undefined) {
-        tracker.getRange(i + 1, col('Due Date') + 1).setValue(payload.dueDate);
       }
       if (payload.ownerName && payload.ownerName !== data[i][col('Owner')]) {
         const owner = findOwnerByName_(ss, payload.ownerName);
@@ -670,7 +689,7 @@ function deleteTask_(payload) {
     const ss = getSpreadsheet_();
     const tracker = ensureSheet_(ss, TRACKER_SHEET, TRACKER_HEADERS);
     const data = tracker.getDataRange().getValues();
-    const col = name => TRACKER_HEADERS.indexOf(name);
+    const col = name => data[0].indexOf(name);
 
     for (let i = 1; i < data.length; i++) {
       if (data[i][col('TaskID')] !== payload.id) continue;
@@ -705,12 +724,11 @@ function createOwnTask_(payload) {
       task,
       meeting: 'Added by owner',
       notified: true, // they just added it themselves, no need to email them about it
-      sourceKey: `self:${Utilities.getUuid()}`,
-      dueDate: payload.dueDate
+      sourceKey: `self:${Utilities.getUuid()}`
     });
 
     tracker.appendRow(row);
-    return { ok: true, id: row[TRACKER_HEADERS.indexOf('TaskID')] };
+    return { ok: true, id: row[getHeaderRow_(tracker).indexOf('TaskID')] };
   } finally {
     lock.releaseLock();
   }
@@ -718,9 +736,9 @@ function createOwnTask_(payload) {
 
 // ---------- comments (running log per task) ----------
 
-// Authorizes a request against a specific task: an admin password always
-// works, or an owner token if that task actually belongs to them. Returns
-// { author } on success (the name to attribute a comment to), or { error }.
+// Authorizes a request to VIEW comments on a specific task: an admin password
+// always works, or an owner token if that task actually belongs to them.
+// Returns { author } (the name to attribute a new comment to) or { error }.
 function authorizeForTask_(ss, payload, taskId) {
   if (payload.password) {
     const expected = PropertiesService.getScriptProperties().getProperty('ADMIN_PASSWORD');
@@ -732,7 +750,7 @@ function authorizeForTask_(ss, payload, taskId) {
     if (!ownerName) return { error: 'Invalid token' };
     const tracker = ensureSheet_(ss, TRACKER_SHEET, TRACKER_HEADERS);
     const data = tracker.getDataRange().getValues();
-    const col = name => TRACKER_HEADERS.indexOf(name);
+    const col = name => data[0].indexOf(name);
     const owns = data.some((row, i) => i > 0 && row[col('TaskID')] === taskId && row[col('Owner')] === ownerName);
     if (!owns) return { error: 'Task does not belong to this owner' };
     return { author: ownerName };
@@ -749,7 +767,7 @@ function getComments_(payload) {
 
   const sheet = ensureSheet_(ss, COMMENTS_SHEET, COMMENTS_HEADERS);
   const data = sheet.getDataRange().getValues();
-  const col = name => COMMENTS_HEADERS.indexOf(name);
+  const col = name => data[0].indexOf(name);
 
   const comments = [];
   for (let i = 1; i < data.length; i++) {
@@ -763,18 +781,23 @@ function getComments_(payload) {
   return { comments };
 }
 
+// Comments can only be added by the task's owner (via their token) — not by
+// the admin. Admin can still view them (see authorizeForTask_/getComments_).
 function addComment_(payload) {
   const { id, text } = payload;
   if (!id || !text) return { error: 'Missing fields' };
+  if (!payload.token) return { error: 'Only the task owner can add a comment' };
+
   const ss = getSpreadsheet_();
-  const auth = authorizeForTask_(ss, payload, id);
+  const auth = authorizeForTask_(ss, { token: payload.token }, id);
   if (auth.error) return auth;
 
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
-    const sheet = ensureSheet_(ss, COMMENTS_SHEET, COMMENTS_HEADERS);
-    sheet.appendRow([id, auth.author, text, new Date()]);
+    const commentsSheet = ensureSheet_(ss, COMMENTS_SHEET, COMMENTS_HEADERS);
+    commentsSheet.appendRow([id, auth.author, text, new Date()]);
+    refreshTrackerCommentSummary_(ss, id);
     return { ok: true };
   } finally {
     lock.releaseLock();
@@ -784,8 +807,38 @@ function addComment_(payload) {
 function deleteCommentsForTask_(ss, taskId) {
   const sheet = ensureSheet_(ss, COMMENTS_SHEET, COMMENTS_HEADERS);
   const data = sheet.getDataRange().getValues();
-  const col = COMMENTS_HEADERS.indexOf('TaskID');
+  const col = data[0] ? data[0].indexOf('TaskID') : -1;
+  if (col === -1) return;
   for (let i = data.length - 1; i >= 1; i--) {
     if (data[i][col] === taskId) sheet.deleteRow(i + 1);
+  }
+}
+
+// Keeps the Tracker sheet's own "Comments" column in sync with the full log
+// in the Comments sheet, so you can see recent comments at a glance without
+// opening the web app. The Comments sheet remains the source of truth.
+function refreshTrackerCommentSummary_(ss, taskId) {
+  const commentsSheet = ensureSheet_(ss, COMMENTS_SHEET, COMMENTS_HEADERS);
+  const commentsData = commentsSheet.getDataRange().getValues();
+  const ccol = name => commentsData[0].indexOf(name);
+
+  const summary = commentsData
+    .slice(1)
+    .filter(row => row[ccol('TaskID')] === taskId)
+    .map(row => `${row[ccol('Author')]}: ${row[ccol('Text')]}`)
+    .join(' | ');
+
+  const tracker = ensureSheet_(ss, TRACKER_SHEET, TRACKER_HEADERS);
+  const trackerData = tracker.getDataRange().getValues();
+  const tcol = name => trackerData[0].indexOf(name);
+  const idCol = tcol('TaskID');
+  const commentsCol = tcol('Comments');
+  if (commentsCol === -1) return;
+
+  for (let i = 1; i < trackerData.length; i++) {
+    if (trackerData[i][idCol] === taskId) {
+      tracker.getRange(i + 1, commentsCol + 1).setValue(summary);
+      return;
+    }
   }
 }

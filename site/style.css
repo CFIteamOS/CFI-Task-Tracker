@@ -129,11 +129,6 @@ h1 {
   opacity: 0.5;
 }
 
-.due-overdue {
-  color: var(--blocked);
-  font-weight: 600;
-}
-
 select, input[type="date"], input[type="password"], input[type="text"], button {
   font: inherit;
   border-radius: 8px;

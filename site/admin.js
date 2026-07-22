@@ -93,7 +93,6 @@ function render() {
           <td>${formatDate(t.momDate)}</td>
           <td><span class="${badgeClass(t.status)}">${t.status}</span></td>
           <td>${formatDate(t.revisedTimelineDate)}</td>
-          <td>${formatDate(t.dueDate)}</td>
           <td>${t.reminderCount || 0}</td>
           <td>
             <div class="row-actions">
@@ -105,7 +104,7 @@ function render() {
         </tr>
       `;
       const commentsRow = expandedCommentsId === t.id
-        ? `<tr class="comments-row" data-comments-for="${escapeHtml(t.id)}"><td colspan="10"><div class="comment-list" id="commentList-${escapeHtml(t.id)}">Loading...</div><div class="comment-add"><input type="text" placeholder="Add a comment" id="commentInput-${escapeHtml(t.id)}"><button class="small-btn secondary" data-action="addComment">Add</button></div></td></tr>`
+        ? `<tr class="comments-row" data-comments-for="${escapeHtml(t.id)}"><td colspan="9"><div class="comment-list" id="commentList-${escapeHtml(t.id)}">Loading...</div></td></tr>`
         : '';
       return mainRow + commentsRow;
     }).join('');
@@ -113,7 +112,7 @@ function render() {
   table.innerHTML = `
     <table>
       <thead>
-        <tr><th>Owner</th><th>Category</th><th>Task</th><th>Meeting</th><th>MoM date</th><th>Status</th><th>Revised to</th><th>Due</th><th>Reminders</th><th>Actions</th></tr>
+        <tr><th>Owner</th><th>Category</th><th>Task</th><th>Meeting</th><th>MoM date</th><th>Status</th><th>Revised to</th><th>Reminders</th><th>Actions</th></tr>
       </thead>
       <tbody>${rows}</tbody>
     </table>
@@ -122,6 +121,8 @@ function render() {
   if (expandedCommentsId) loadComments(expandedCommentsId);
 }
 
+// Admin can view comments (read-only) but not add them — only the task's
+// owner can, from their own checklist.
 async function loadComments(taskId) {
   const listEl = document.getElementById(`commentList-${taskId}`);
   if (!listEl) return;
@@ -145,7 +146,6 @@ function startEdit(task) {
   document.getElementById('formTitle').textContent = `Editing task ${task.id}`;
   document.getElementById('assignOwner').value = task.owner;
   document.getElementById('assignTask').value = task.task;
-  document.getElementById('assignDueDate').value = task.dueDate ? new Date(task.dueDate).toISOString().slice(0, 10) : '';
   document.getElementById('assignBtn').textContent = 'Save changes';
   document.getElementById('cancelEditBtn').style.display = 'inline-block';
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -155,7 +155,6 @@ function stopEdit() {
   editingTaskId = null;
   document.getElementById('formTitle').textContent = 'Assign a new task';
   document.getElementById('assignTask').value = '';
-  document.getElementById('assignDueDate').value = '';
   document.getElementById('assignBtn').textContent = 'Assign task';
   document.getElementById('cancelEditBtn').style.display = 'none';
 }
@@ -193,7 +192,6 @@ document.getElementById('cancelEditBtn').addEventListener('click', stopEdit);
 document.getElementById('assignBtn').addEventListener('click', async () => {
   const ownerName = document.getElementById('assignOwner').value;
   const task = document.getElementById('assignTask').value.trim();
-  const dueDate = document.getElementById('assignDueDate').value;
   const statusEl = document.getElementById('assignStatus');
   const btn = document.getElementById('assignBtn');
 
@@ -209,8 +207,8 @@ document.getElementById('assignBtn').addEventListener('click', async () => {
   btn.disabled = true;
   try {
     const body = editingTaskId
-      ? { action: 'updateTask', password: adminPassword, id: editingTaskId, ownerName, task, dueDate }
-      : { action: 'createTask', password: adminPassword, ownerName, task, dueDate };
+      ? { action: 'updateTask', password: adminPassword, id: editingTaskId, ownerName, task }
+      : { action: 'createTask', password: adminPassword, ownerName, task };
     const data = await postAction(body);
     if (data.error) {
       statusEl.textContent = data.error;
@@ -246,15 +244,5 @@ document.getElementById('table').addEventListener('click', async (e) => {
   } else if (btn.dataset.action === 'comments') {
     expandedCommentsId = expandedCommentsId === taskId ? null : taskId;
     render();
-  } else if (btn.dataset.action === 'addComment') {
-    const input = document.getElementById(`commentInput-${taskId}`);
-    const text = input.value.trim();
-    if (!text) return;
-    btn.disabled = true;
-    const data = await postAction({ action: 'addComment', password: adminPassword, id: taskId, text });
-    btn.disabled = false;
-    if (data.error) { alert(data.error); return; }
-    input.value = '';
-    loadComments(taskId);
   }
 });

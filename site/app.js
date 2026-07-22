@@ -47,10 +47,6 @@ function renderTask(task, token, onChange) {
   row.className = 'card';
 
   const isDone = task.status === 'Done';
-  const isOverdue = !isDone && task.dueDate && new Date(task.dueDate) < new Date(new Date().toDateString());
-  const dueHtml = task.dueDate
-    ? `<span class="sep">-</span><span class="${isOverdue ? 'due-overdue' : ''}">Due ${formatDate(task.dueDate)}</span>`
-    : '';
   const categoryHtml = task.category
     ? `<span class="badge category-badge">${escapeHtml(task.category)}</span>`
     : '';
@@ -63,7 +59,6 @@ function renderTask(task, token, onChange) {
           <span>${escapeHtml(task.meeting || '')}</span>
           <span class="sep">-</span>
           <span>${formatDate(task.momDate)}</span>
-          ${dueHtml}
           <span class="sep">-</span>
           <span class="${badgeClass(task.status)}">${task.status}</span>
         </div>
@@ -219,12 +214,11 @@ async function init() {
 
   document.getElementById('ownTaskBtn').addEventListener('click', async () => {
     const textInput = document.getElementById('ownTaskText');
-    const dueInput = document.getElementById('ownTaskDueDate');
     const text = textInput.value.trim();
     if (!text) return;
     const btn = document.getElementById('ownTaskBtn');
     btn.disabled = true;
-    const result = await postApi({ action: 'createOwnTask', token, task: text, dueDate: dueInput.value });
+    const result = await postApi({ action: 'createOwnTask', token, task: text });
     btn.disabled = false;
     if (result.error) {
       alert('Could not add task: ' + result.error);
@@ -232,10 +226,9 @@ async function init() {
     }
     data.tasks.push({
       id: result.id, task: text, meeting: 'Added by owner', momDate: new Date().toISOString(),
-      status: 'Pending', dueDate: dueInput.value || null
+      status: 'Pending'
     });
     textInput.value = '';
-    dueInput.value = '';
     rerender();
   });
 }

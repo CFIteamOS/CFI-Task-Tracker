@@ -37,16 +37,22 @@ can update themselves. You get a password-gated admin dashboard.
 5. You open `admin.html`, enter your password, and see every owner's status in
    one table, filterable by all / not-done / blocked / revised timeline, plus
    an overall completion bar. From here you can:
-   - Assign a new task to any existing owner (task text + optional due date)
-     — appears on their checklist immediately, flows through the same
-     notification/reminder logic as MoM-parsed tasks.
+   - Assign a new task to any existing owner (task text only) — appears on
+     their checklist immediately, flows through the same notification/reminder
+     logic as MoM-parsed tasks.
    - Edit or delete any existing task (click Edit on a row to load it into
      the same form; changing the owner re-flags it as unnotified so they get
      a heads-up about the reassignment).
+   - View (but not add) comments on any task.
 6. Owners can also add their own tasks from their checklist page (no owner
-   picker needed — it's always added under them), and everyone (owner or
-   admin) can leave comments on a task — a running, timestamped log, not a
-   single overwritable note. Useful for context like "why is this blocked."
+   picker needed — it's always added under them), and can leave comments on
+   any of their own tasks — a running, timestamped log, not a single
+   overwritable note. Useful for context like "why is this blocked." Only the
+   task's owner can add a comment; the admin dashboard can view but not add
+   one. The full log lives in the `Comments` sheet; the `Tracker` sheet's own
+   `Comments` column is just a synced summary for at-a-glance reading — feel
+   free to drag that column next to `Task` (or anywhere else) in the Sheet UI,
+   every function looks columns up by name, not position.
 
 ## Branding
 
