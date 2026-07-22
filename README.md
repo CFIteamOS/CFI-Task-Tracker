@@ -1,14 +1,18 @@
 # MoM Task Tracker
 
 Replaces the old Sheet + reply-parsing MoM tracker with a web checklist.
-You still send MoM emails and `@Name`-tag owners; Apps Script parses them into a
-Google Sheet, then each owner gets **one permanent link** to a checklist they
+MoM emails still get `@Name`-tagged action items; Apps Script parses them into
+a Google Sheet, then each owner gets **one permanent link** to a checklist they
 can update themselves. You get a password-gated admin dashboard.
 
 ## How it works
 
-1. `scanMoMEmails` scans your sent MoM emails for an `[Actions]` section and
-   `@Name` tags, and writes new tasks to the `Tracker` sheet.
+1. `scanMoMEmails` scans for MoM emails and parses their `[Actions]` section
+   for `@Name` tags, writing new tasks to the `Tracker` sheet. By default it
+   searches your own Sent Mail (`in:sent subject:MoM`). If MoM emails instead
+   arrive in your mailbox from a separate address (e.g. an automated
+   `updates@yourcompany.com`), set that with `setMomSender` (see setup below)
+   and it'll search `from:that-address subject:MoM` instead.
 2. `notifyOwners` emails each owner their personal checklist link once their
    task is at least `NOTIFY_DELAY_DAYS` (default 3) days past the MoM date —
    a "welcome" email the first time, then a lighter "new items added" nudge
@@ -40,9 +44,12 @@ on a container binding.
    [`apps-script/appsscript.json`](apps-script/appsscript.json).
 3. Apps Script's Run button always calls a function with zero arguments, so
    you can't run `setSpreadsheetId('...')` directly. Instead, find the `setup`
-   function near the top of the file, replace its two placeholder strings
-   with your Sheet ID and a password of your choosing, then select `setup` in
-   the function dropdown and click Run once. This also runs `initializeSheets`
+   function near the top of the file and fill in its placeholder strings:
+   your Sheet ID, a password of your choosing, and (only if MoM emails arrive
+   from a separate address rather than your own Sent Mail) that sender's
+   email in `setMomSender`. Leave `setMomSender`'s placeholder untouched to
+   keep searching your own Sent Mail instead. Then select `setup` in the
+   function dropdown and click Run once. This also runs `initializeSheets`
    (creates the `Tracker`, `Owners`, `Unmatched` sheets with headers) and
    `setAdminPassword` (stores it in Script Properties — never written to the
    Sheet or the public repo). Authorize the requested Gmail/Sheets scopes when

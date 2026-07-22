@@ -48,11 +48,25 @@ const UNMATCHED_HEADERS = ['Name Tag', 'Task', 'Meeting', 'MoM Date', 'Seen At']
 function setup() {
   setSpreadsheetId('PASTE_YOUR_SHEET_ID_HERE');
   setAdminPassword('PASTE_YOUR_ADMIN_PASSWORD_HERE');
+  setMomSender('PASTE_THE_MOM_SENDER_EMAIL_HERE'); // e.g. 'updates@curefoods.in' — leave as-is to instead search your own Sent Mail
   initializeSheets();
 }
 
 function setSpreadsheetId(id) {
   PropertiesService.getScriptProperties().setProperty('SPREADSHEET_ID', id);
+}
+
+// If MoM emails are sent by a separate address (e.g. an automated inbox) into
+// your mailbox, set that address here and scanMoMEmails will search for mail
+// *received* from it instead of mail you personally sent.
+function setMomSender(email) {
+  if (!email || email.indexOf('PASTE_') === 0) return; // ignore the untouched placeholder
+  PropertiesService.getScriptProperties().setProperty('MOM_SENDER', email);
+}
+
+function getMomSearchQuery_() {
+  const sender = PropertiesService.getScriptProperties().getProperty('MOM_SENDER');
+  return sender ? `from:(${sender}) subject:MoM newer_than:2d` : 'in:sent subject:MoM newer_than:2d';
 }
 
 function getSpreadsheet_() {
@@ -104,7 +118,7 @@ function scanMoMEmails() {
     getColumnValues_(tracker, TRACKER_HEADERS.indexOf('SourceKey') + 1).filter(String)
   );
 
-  const threads = GmailApp.search('in:sent subject:MoM newer_than:2d');
+  const threads = GmailApp.search(getMomSearchQuery_());
   const newRows = [];
 
   threads.forEach(thread => {
