@@ -4,7 +4,7 @@
  * Sheets used (created automatically by initializeSheets if missing):
  *   Tracker:  TaskID | Owner | OwnerEmail | Comments | Task | Meeting | MoM Date
  *             | Status | Revised Timeline Date | Reminder Count | Last Updated
- *             | Notified | SourceKey | Category
+ *             | Notified | SourceKey
  *   Owners:   Name | Email | Token | WelcomeSent
  *   Unmatched: raw @name tags scanMoMEmails couldn't resolve to an email, for manual fixup
  *   Comments: TaskID | Author | Text | Timestamp — the full running log per task
@@ -45,7 +45,7 @@ const STATUS = {
 // there's room, and you're free to drag columns around afterward.
 const TRACKER_HEADERS = [
   'TaskID', 'Owner', 'OwnerEmail', 'Comments', 'Task', 'Meeting', 'MoM Date', 'Status',
-  'Revised Timeline Date', 'Reminder Count', 'Last Updated', 'Notified', 'SourceKey', 'Category'
+  'Revised Timeline Date', 'Reminder Count', 'Last Updated', 'Notified', 'SourceKey'
 ];
 const OWNERS_HEADERS = ['Name', 'Email', 'Token', 'WelcomeSent'];
 const UNMATCHED_HEADERS = ['Name Tag', 'Task', 'Meeting', 'MoM Date', 'Seen At'];
@@ -195,8 +195,7 @@ function scanMoMEmails() {
           'Reminder Count': 0,
           'Last Updated': new Date(),
           Notified: false,
-          SourceKey: sourceKey,
-          Category: action.category || ''
+          SourceKey: sourceKey
         }));
         existingKeys.add(sourceKey);
       });
@@ -210,9 +209,11 @@ function scanMoMEmails() {
 
 // Format (one bullet per line, under a "[Actions]" heading):
 //   - [Category] Task text @Full Name @Another Person
-// [Category] is optional. Multiple @tags on one line means the same task
-// goes to each of those people separately. Also handles Gmail's auto-inserted
-// contact chip, which expands a typed "@Name" into "@Full Name <email@x.com>".
+// A leading [Category] tag is optional and just gets stripped out (not
+// stored — it's not tracked as data). Multiple @tags on one line means the
+// same task goes to each of those people separately. Also handles Gmail's
+// auto-inserted contact chip, which expands a typed "@Name" into
+// "@Full Name <email@x.com>".
 function parseActionsSection_(body) {
   const lines = body.split('\n');
   const startIdx = lines.findIndex(l => /^\s*\[Actions\]\s*$/i.test(l));
@@ -234,7 +235,6 @@ function parseActionsSection_(body) {
     let rest = line.replace(/^\s*[-*]\s+/, '');
 
     const catMatch = rest.match(/^\[([^\]]+)\]\s*/);
-    const category = catMatch ? catMatch[1].trim() : '';
     if (catMatch) rest = rest.slice(catMatch[0].length);
 
     const tagPattern = /@([^<@]+?)(?:\s*<[^>]*>)?(?=\s*@|\s*$)/g;
@@ -250,7 +250,7 @@ function parseActionsSection_(body) {
     const task = rest.slice(0, firstTagIndex).trim();
     if (!task) return;
 
-    nameTags.forEach(nameTag => actions.push({ nameTag, task, category }));
+    nameTags.forEach(nameTag => actions.push({ nameTag, task }));
   });
 
   return actions;
@@ -488,8 +488,7 @@ function getTasksForToken_(token) {
       meeting: data[i][col('Meeting')],
       momDate: data[i][col('MoM Date')],
       status: data[i][col('Status')],
-      revisedTimelineDate: data[i][col('Revised Timeline Date')],
-      category: data[i][col('Category')]
+      revisedTimelineDate: data[i][col('Revised Timeline Date')]
     });
   }
   return { owner: ownerName, tasks };
@@ -548,8 +547,7 @@ function getAdminList_(password) {
       status: data[i][col('Status')],
       revisedTimelineDate: data[i][col('Revised Timeline Date')],
       reminderCount: data[i][col('Reminder Count')],
-      lastUpdated: data[i][col('Last Updated')],
-      category: data[i][col('Category')]
+      lastUpdated: data[i][col('Last Updated')]
     });
   }
 

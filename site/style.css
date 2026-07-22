@@ -170,13 +170,6 @@ button:disabled { opacity: 0.5; cursor: default; }
 .badge.Revised-Timeline { background: color-mix(in srgb, var(--revised) 20%, transparent); color: var(--revised); }
 .badge.Done { background: color-mix(in srgb, var(--done) 20%, transparent); color: var(--done); }
 
-.category-badge {
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  color: var(--accent);
-  margin-right: 4px;
-  vertical-align: middle;
-}
-
 .empty, .error, .loading {
   color: var(--muted);
   text-align: center;

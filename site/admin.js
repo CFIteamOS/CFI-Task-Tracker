@@ -87,7 +87,6 @@ function render() {
       const mainRow = `
         <tr data-id="${escapeHtml(t.id)}">
           <td>${escapeHtml(t.owner)}</td>
-          <td>${escapeHtml(t.category)}</td>
           <td>${escapeHtml(t.task)}</td>
           <td>${escapeHtml(t.meeting)}</td>
           <td>${formatDate(t.momDate)}</td>
@@ -104,7 +103,7 @@ function render() {
         </tr>
       `;
       const commentsRow = expandedCommentsId === t.id
-        ? `<tr class="comments-row" data-comments-for="${escapeHtml(t.id)}"><td colspan="9"><div class="comment-list" id="commentList-${escapeHtml(t.id)}">Loading...</div></td></tr>`
+        ? `<tr class="comments-row" data-comments-for="${escapeHtml(t.id)}"><td colspan="8"><div class="comment-list" id="commentList-${escapeHtml(t.id)}">Loading...</div></td></tr>`
         : '';
       return mainRow + commentsRow;
     }).join('');
@@ -112,7 +111,7 @@ function render() {
   table.innerHTML = `
     <table>
       <thead>
-        <tr><th>Owner</th><th>Category</th><th>Task</th><th>Meeting</th><th>MoM date</th><th>Status</th><th>Revised to</th><th>Reminders</th><th>Actions</th></tr>
+        <tr><th>Owner</th><th>Task</th><th>Meeting</th><th>MoM date</th><th>Status</th><th>Revised to</th><th>Reminders</th><th>Actions</th></tr>
       </thead>
       <tbody>${rows}</tbody>
     </table>

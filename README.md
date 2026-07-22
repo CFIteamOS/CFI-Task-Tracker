@@ -14,10 +14,11 @@ can update themselves. You get a password-gated admin dashboard.
 
    - [Category] Task text @Full Name @Another Person
    ```
-   `[Category]` is optional (shown as a small tag on the task). Tagging
-   multiple people on one line creates a separate copy of that task on each
-   of their checklists. Works with both a plainly typed `@Name` and Gmail's
-   auto-inserted contact chip (`@Full Name <email@x.com>`).
+   A leading `[Category]` tag is optional and just gets stripped out of the
+   task text — it isn't tracked as data. Tagging multiple people on one line
+   creates a separate copy of that task on each of their checklists. Works
+   with both a plainly typed `@Name` and Gmail's auto-inserted contact chip
+   (`@Full Name <email@x.com>`).
    By default it searches your own Sent Mail (`in:sent subject:MoM`). If MoM
    emails instead arrive in your mailbox from a separate address (e.g. an
    automated `updates@yourcompany.com`), set that with `setMomSender` (see
