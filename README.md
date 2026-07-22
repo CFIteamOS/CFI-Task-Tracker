@@ -38,31 +38,33 @@ on a container binding.
    [`apps-script/Code.gs`](apps-script/Code.gs). Also update the manifest
    (Project Settings → "Show appsscript.json") with
    [`apps-script/appsscript.json`](apps-script/appsscript.json).
-3. Run `setSpreadsheetId('paste-the-id-here')` once from the editor (select it
-   in the function dropdown, then Run) to point the script at that Sheet.
-4. Run `initializeSheets` once (creates the `Tracker`, `Owners`, `Unmatched`
-   sheets with headers). Authorize the requested Gmail/Sheets scopes when
+3. Apps Script's Run button always calls a function with zero arguments, so
+   you can't run `setSpreadsheetId('...')` directly. Instead, find the `setup`
+   function near the top of the file, replace its two placeholder strings
+   with your Sheet ID and a password of your choosing, then select `setup` in
+   the function dropdown and click Run once. This also runs `initializeSheets`
+   (creates the `Tracker`, `Owners`, `Unmatched` sheets with headers) and
+   `setAdminPassword` (stores it in Script Properties — never written to the
+   Sheet or the public repo). Authorize the requested Gmail/Sheets scopes when
    prompted.
-5. Run `setAdminPassword('choose-a-strong-password')` once from the editor.
-   This stores the password in Script Properties — it's never written to the
-   Sheet or the public repo.
-6. Open the **Owners** sheet and pre-fill `Name` + `Email` for everyone you
+4. Open the **Owners** sheet and pre-fill `Name` + `Email` for everyone you
    might tag with `@Name` in a MoM. If `scanMoMEmails` sees a tag it can't
    match to a name here, it logs it to the `Unmatched` sheet instead of
    guessing — check that sheet periodically and add missing people.
-7. Deploy → New deployment → type **Web app**. Execute as **Me**, who has
+5. Deploy → New deployment → type **Web app**. Execute as **Me**, who has
    access **Anyone**. Copy the deployment URL (ends in `/exec`).
-8. Back in the editor, run `setSiteBaseUrl('https://<you>.github.io/<repo>/')`
-   once you know your GitHub Pages URL (step 3 below) — this is what gets
-   embedded in the emailed links.
-9. Triggers (clock icon in the left sidebar) → add three time-driven triggers:
+6. Once you know your GitHub Pages URL (step 3 below), find the `setupSiteUrl`
+   function, replace its placeholder with that URL, select `setupSiteUrl` in
+   the dropdown, and click Run once — this is what gets embedded in the
+   emailed links.
+7. Triggers (clock icon in the left sidebar) → add three time-driven triggers:
    - `scanMoMEmails` — e.g. every few hours, or daily.
    - `notifyOwners` — daily, shortly after `scanMoMEmails`.
    - `sendReminders` — every 7 days.
 
 ### 2. Static site
 1. Edit [`site/config.js`](site/config.js) and set `API_URL` to the Web App
-   URL from step 1.7.
+   URL from step 1.5.
 
 ### 3. GitHub Pages
 1. Create a new GitHub repo (public, unless you have GitHub Pro/Enterprise for

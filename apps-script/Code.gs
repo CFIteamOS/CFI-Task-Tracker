@@ -39,6 +39,17 @@ const OWNERS_HEADERS = ['Name', 'Email', 'Token', 'WelcomeSent'];
 const UNMATCHED_HEADERS = ['Name Tag', 'Task', 'Meeting', 'MoM Date', 'Seen At'];
 
 // ---------- setup ----------
+//
+// Apps Script's Run button always calls the selected function with zero
+// arguments, so setSpreadsheetId('...')/setAdminPassword('...') can't be run
+// directly from the dropdown. Fill in the placeholders below, select `setup`
+// in the function dropdown, and click Run once.
+
+function setup() {
+  setSpreadsheetId('PASTE_YOUR_SHEET_ID_HERE');
+  setAdminPassword('PASTE_YOUR_ADMIN_PASSWORD_HERE');
+  initializeSheets();
+}
 
 function setSpreadsheetId(id) {
   PropertiesService.getScriptProperties().setProperty('SPREADSHEET_ID', id);
@@ -253,6 +264,13 @@ function getSiteBaseUrl_() {
 
 function setSiteBaseUrl(url) {
   PropertiesService.getScriptProperties().setProperty('SITE_BASE_URL', url);
+}
+
+// Once you know your GitHub Pages URL: fill it in below, select `setupSiteUrl`
+// in the function dropdown, and click Run once (see comment on `setup` above
+// for why this can't just be run directly on setSiteBaseUrl).
+function setupSiteUrl() {
+  setSiteBaseUrl('https://PASTE_YOUR_GITHUB_PAGES_URL_HERE/');
 }
 
 // ---------- step 3: escalating reminders ----------
