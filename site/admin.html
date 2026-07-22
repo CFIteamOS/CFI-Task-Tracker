@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Task Tracker · Admin</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="wrap">
+    <div id="login" class="login-box">
+      <h1>Admin login</h1>
+      <input type="password" id="password" placeholder="Password" autofocus>
+      <button id="loginBtn">View dashboard</button>
+      <div id="loginError" class="error"></div>
+    </div>
+    <div id="dashboard" style="display:none">
+      <h1>Task tracker</h1>
+      <p class="subtitle" id="summary"></p>
+      <div class="filters">
+        <button data-filter="all" class="active">All</button>
+        <button data-filter="open">Not done</button>
+        <button data-filter="Blocked">Blocked</button>
+        <button data-filter="Revised Timeline">Revised timeline</button>
+      </div>
+      <div id="table"></div>
+    </div>
+  </div>
+  <script src="config.js"></script>
+  <script src="admin.js"></script>
+</body>
+</html>
