@@ -8,16 +8,20 @@
  *   Unmatched: raw @name tags scanMoMEmails couldn't resolve to an email, for manual fixup
  *
  * One-time setup (run once from the Apps Script editor):
- *   1. initializeSheets()
- *   2. setAdminPassword('choose-a-password')
- *   3. Pre-populate the Owners sheet with Name + Email for everyone you tag in MoMs.
- *   4. Deploy > New deployment > Web app (execute as Me, access Anyone), copy the URL into site/config.js.
- *   5. Set time-driven triggers for scanMoMEmails, notifyOwners, sendReminders (Triggers panel).
+ *   1. Create (or reuse) a Google Sheet to act as the database, and set its ID here:
+ *      setSpreadsheetId('paste-the-sheet-id-from-its-url')
+ *   2. initializeSheets()
+ *   3. setAdminPassword('choose-a-password')
+ *   4. Pre-populate the Owners sheet with Name + Email for everyone you tag in MoMs.
+ *   5. Deploy > New deployment > Web app (execute as Me, access Anyone), copy the URL into site/config.js.
+ *   6. Set time-driven triggers for scanMoMEmails, notifyOwners, sendReminders (Triggers panel).
  */
 
 const TRACKER_SHEET = 'Tracker';
 const OWNERS_SHEET = 'Owners';
 const UNMATCHED_SHEET = 'Unmatched';
+
+const NOTIFY_DELAY_DAYS = 3; // wait this many days after the MoM date before first notifying an owner
 
 const STATUS = {
   PENDING: 'Pending',
@@ -36,8 +40,23 @@ const UNMATCHED_HEADERS = ['Name Tag', 'Task', 'Meeting', 'MoM Date', 'Seen At']
 
 // ---------- setup ----------
 
+function setSpreadsheetId(id) {
+  PropertiesService.getScriptProperties().setProperty('SPREADSHEET_ID', id);
+}
+
+function getSpreadsheet_() {
+  const id = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+  if (id) return SpreadsheetApp.openById(id);
+  const active = SpreadsheetApp.getActiveSpreadsheet();
+  if (active) return active;
+  throw new Error(
+    "No spreadsheet configured. Run setSpreadsheetId('your-sheet-id') once from the editor " +
+    '(the ID is the long string in the Sheet\'s URL between /d/ and /edit).'
+  );
+}
+
 function initializeSheets() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getSpreadsheet_();
   ensureSheet_(ss, TRACKER_SHEET, TRACKER_HEADERS);
   ensureSheet_(ss, OWNERS_SHEET, OWNERS_HEADERS);
   ensureSheet_(ss, UNMATCHED_SHEET, UNMATCHED_HEADERS);
@@ -60,7 +79,7 @@ function setAdminPassword(password) {
 // ---------- step 1: scan sent MoM emails ----------
 
 function scanMoMEmails() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getSpreadsheet_();
   const tracker = ensureSheet_(ss, TRACKER_SHEET, TRACKER_HEADERS);
   const existingKeys = new Set(
     tracker.getRange(2, TRACKER_HEADERS.indexOf('SourceKey') + 1, Math.max(tracker.getLastRow() - 1, 0), 1)
@@ -166,7 +185,7 @@ function generateTaskId_(tracker) {
 // ---------- step 2: notify owners (welcome or new-items nudge) ----------
 
 function notifyOwners() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getSpreadsheet_();
   const tracker = ensureSheet_(ss, TRACKER_SHEET, TRACKER_HEADERS);
   const owners = ensureSheet_(ss, OWNERS_SHEET, OWNERS_HEADERS);
   const baseUrl = getSiteBaseUrl_();
@@ -175,10 +194,13 @@ function notifyOwners() {
   const notifiedCol = TRACKER_HEADERS.indexOf('Notified');
   const ownerCol = TRACKER_HEADERS.indexOf('Owner');
   const taskCol = TRACKER_HEADERS.indexOf('Task');
+  const momDateCol = TRACKER_HEADERS.indexOf('MoM Date');
+  const notifyCutoff = new Date(Date.now() - NOTIFY_DELAY_DAYS * 24 * 60 * 60 * 1000);
 
   const pendingByOwner = {};
   for (let i = 1; i < trackerData.length; i++) {
     if (trackerData[i][notifiedCol] === true) continue;
+    if (new Date(trackerData[i][momDateCol]) > notifyCutoff) continue; // not old enough yet, catch it on a later run
     const owner = trackerData[i][ownerCol];
     if (!pendingByOwner[owner]) pendingByOwner[owner] = [];
     pendingByOwner[owner].push({ row: i + 1, task: trackerData[i][taskCol] });
@@ -236,7 +258,7 @@ function setSiteBaseUrl(url) {
 // ---------- step 3: escalating reminders ----------
 
 function sendReminders() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getSpreadsheet_();
   const tracker = ensureSheet_(ss, TRACKER_SHEET, TRACKER_HEADERS);
   const owners = ensureSheet_(ss, OWNERS_SHEET, OWNERS_HEADERS);
   const baseUrl = getSiteBaseUrl_();
@@ -315,7 +337,7 @@ function jsonOut_(obj) {
 
 function getTasksForToken_(token) {
   if (!token) return { error: 'Missing token' };
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getSpreadsheet_();
   const owners = ensureSheet_(ss, OWNERS_SHEET, OWNERS_HEADERS);
   const ownersData = owners.getDataRange().getValues();
   const tokenCol = OWNERS_HEADERS.indexOf('Token');
@@ -357,7 +379,7 @@ function updateStatus_(payload) {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const ss = getSpreadsheet_();
     const owners = ensureSheet_(ss, OWNERS_SHEET, OWNERS_HEADERS);
     const ownersData = owners.getDataRange().getValues();
     const tokenCol = OWNERS_HEADERS.indexOf('Token');
@@ -397,7 +419,7 @@ function getAdminList_(password) {
   const expected = PropertiesService.getScriptProperties().getProperty('ADMIN_PASSWORD');
   if (!expected || password !== expected) return { error: 'Unauthorized' };
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getSpreadsheet_();
   const tracker = ensureSheet_(ss, TRACKER_SHEET, TRACKER_HEADERS);
   const data = tracker.getDataRange().getValues();
   const col = name => TRACKER_HEADERS.indexOf(name);

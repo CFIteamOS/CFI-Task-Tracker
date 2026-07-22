@@ -9,9 +9,13 @@ can update themselves. You get a password-gated admin dashboard.
 
 1. `scanMoMEmails` scans your sent MoM emails for an `[Actions]` section and
    `@Name` tags, and writes new tasks to the `Tracker` sheet.
-2. `notifyOwners` emails each owner their personal checklist link — a
-   "welcome" email the first time, then a lighter "new items added" nudge
-   afterwards. The link never changes.
+2. `notifyOwners` emails each owner their personal checklist link once their
+   task is at least `NOTIFY_DELAY_DAYS` (default 3) days past the MoM date —
+   a "welcome" email the first time, then a lighter "new items added" nudge
+   afterwards. The link never changes. The delay is checked per-task inside
+   the function itself, so it doesn't matter how often the trigger runs —
+   e.g. running it daily just means newly-eligible tasks get picked up within
+   a day of crossing the 3-day mark.
 3. Owners open their link, check tasks off or mark them In Progress / Blocked /
    Revised Timeline — this calls the Apps Script Web App directly and updates
    the Sheet live.
@@ -23,34 +27,42 @@ can update themselves. You get a password-gated admin dashboard.
 ## One-time setup
 
 ### 1. Apps Script project
-1. Go to a Google Sheet you want to use as the database (or create a new one).
-2. Extensions → Apps Script. Delete the default `Code.gs` content and paste in
+This can be either a standalone Apps Script project (script.google.com → New
+Project) or one bound to a Sheet (Sheet → Extensions → Apps Script) — either
+works, since the script is told which Sheet to use by ID rather than relying
+on a container binding.
+
+1. Create (or reuse) a Google Sheet to act as the database. Copy its ID out of
+   the URL: `https://docs.google.com/spreadsheets/d/`**`THIS_PART`**`/edit`.
+2. In the Apps Script editor, delete the default `Code.gs` content and paste in
    [`apps-script/Code.gs`](apps-script/Code.gs). Also update the manifest
    (Project Settings → "Show appsscript.json") with
    [`apps-script/appsscript.json`](apps-script/appsscript.json).
-3. In the Apps Script editor, run `initializeSheets` once (creates the
-   `Tracker`, `Owners`, `Unmatched` sheets with headers). Authorize the
-   requested Gmail/Sheets scopes when prompted.
-4. Run `setAdminPassword('choose-a-strong-password')` once from the editor
-   (select it in the function dropdown, then Run). This stores the password in
-   Script Properties — it's never written to the Sheet or the public repo.
-5. Open the **Owners** sheet and pre-fill `Name` + `Email` for everyone you
+3. Run `setSpreadsheetId('paste-the-id-here')` once from the editor (select it
+   in the function dropdown, then Run) to point the script at that Sheet.
+4. Run `initializeSheets` once (creates the `Tracker`, `Owners`, `Unmatched`
+   sheets with headers). Authorize the requested Gmail/Sheets scopes when
+   prompted.
+5. Run `setAdminPassword('choose-a-strong-password')` once from the editor.
+   This stores the password in Script Properties — it's never written to the
+   Sheet or the public repo.
+6. Open the **Owners** sheet and pre-fill `Name` + `Email` for everyone you
    might tag with `@Name` in a MoM. If `scanMoMEmails` sees a tag it can't
    match to a name here, it logs it to the `Unmatched` sheet instead of
    guessing — check that sheet periodically and add missing people.
-6. Deploy → New deployment → type **Web app**. Execute as **Me**, who has
+7. Deploy → New deployment → type **Web app**. Execute as **Me**, who has
    access **Anyone**. Copy the deployment URL (ends in `/exec`).
-7. Back in the editor, run `setSiteBaseUrl('https://<you>.github.io/<repo>/')`
+8. Back in the editor, run `setSiteBaseUrl('https://<you>.github.io/<repo>/')`
    once you know your GitHub Pages URL (step 3 below) — this is what gets
    embedded in the emailed links.
-8. Triggers (clock icon in the left sidebar) → add three time-driven triggers:
+9. Triggers (clock icon in the left sidebar) → add three time-driven triggers:
    - `scanMoMEmails` — e.g. every few hours, or daily.
    - `notifyOwners` — daily, shortly after `scanMoMEmails`.
    - `sendReminders` — every 7 days.
 
 ### 2. Static site
 1. Edit [`site/config.js`](site/config.js) and set `API_URL` to the Web App
-   URL from step 1.6.
+   URL from step 1.7.
 
 ### 3. GitHub Pages
 1. Create a new GitHub repo (public, unless you have GitHub Pro/Enterprise for
