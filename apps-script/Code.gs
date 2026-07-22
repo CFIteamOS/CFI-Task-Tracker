@@ -155,9 +155,11 @@ function parseActionsSection_(body) {
   const lines = match[1].split('\n');
   const actions = [];
   lines.forEach(line => {
-    const lineMatch = line.match(/^\s*[-*]?\s*@(\S+)\s*[:\-]\s*(.+?)\s*$/);
+    // Handles both a plain typed tag ("@Sanjana: task") and Gmail's auto-inserted
+    // contact chip, which expands to "@Full Name <email@domain.com> : task".
+    const lineMatch = line.match(/^\s*[-*]?\s*@([^<:\-]+?)(?:\s*<[^>]*>)?\s*[:\-]\s*(.+?)\s*$/);
     if (lineMatch) {
-      actions.push({ nameTag: lineMatch[1], task: lineMatch[2] });
+      actions.push({ nameTag: lineMatch[1].trim(), task: lineMatch[2] });
     }
   });
   return actions;
