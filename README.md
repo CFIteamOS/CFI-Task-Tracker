@@ -7,12 +7,21 @@ can update themselves. You get a password-gated admin dashboard.
 
 ## How it works
 
-1. `scanMoMEmails` scans for MoM emails and parses their `[Actions]` section
-   for `@Name` tags, writing new tasks to the `Tracker` sheet. By default it
-   searches your own Sent Mail (`in:sent subject:MoM`). If MoM emails instead
-   arrive in your mailbox from a separate address (e.g. an automated
-   `updates@yourcompany.com`), set that with `setMomSender` (see setup below)
-   and it'll search `from:that-address subject:MoM` instead.
+1. `scanMoMEmails` scans for MoM emails and parses their `[Actions]` section,
+   writing new tasks to the `Tracker` sheet. Each bullet line looks like:
+   ```
+   [Actions]
+
+   - [Category] Task text @Full Name @Another Person
+   ```
+   `[Category]` is optional (shown as a small tag on the task). Tagging
+   multiple people on one line creates a separate copy of that task on each
+   of their checklists. Works with both a plainly typed `@Name` and Gmail's
+   auto-inserted contact chip (`@Full Name <email@x.com>`).
+   By default it searches your own Sent Mail (`in:sent subject:MoM`). If MoM
+   emails instead arrive in your mailbox from a separate address (e.g. an
+   automated `updates@yourcompany.com`), set that with `setMomSender` (see
+   setup below) and it'll search `from:that-address subject:MoM` instead.
 2. `notifyOwners` emails each owner their personal checklist link once their
    task is at least `NOTIFY_DELAY_DAYS` (default 3) days past the MoM date —
    a "welcome" email the first time, then a lighter "new items added" nudge

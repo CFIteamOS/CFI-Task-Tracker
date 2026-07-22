@@ -4,7 +4,7 @@
  * Sheets used (created automatically by initializeSheets if missing):
  *   Tracker:  TaskID | Owner | OwnerEmail | Task | Meeting | MoM Date | Status
  *             | Revised Timeline Date | Reminder Count | Last Updated | Notified
- *             | SourceKey | Due Date
+ *             | SourceKey | Due Date | Category
  *   Owners:   Name | Email | Token | WelcomeSent
  *   Unmatched: raw @name tags scanMoMEmails couldn't resolve to an email, for manual fixup
  *   Comments: TaskID | Author | Text | Timestamp — a running log per task
@@ -36,7 +36,8 @@ const STATUS = {
 
 const TRACKER_HEADERS = [
   'TaskID', 'Owner', 'OwnerEmail', 'Task', 'Meeting', 'MoM Date', 'Status',
-  'Revised Timeline Date', 'Reminder Count', 'Last Updated', 'Notified', 'SourceKey', 'Due Date'
+  'Revised Timeline Date', 'Reminder Count', 'Last Updated', 'Notified', 'SourceKey', 'Due Date',
+  'Category'
 ];
 const OWNERS_HEADERS = ['Name', 'Email', 'Token', 'WelcomeSent'];
 const UNMATCHED_HEADERS = ['Name Tag', 'Task', 'Meeting', 'MoM Date', 'Seen At'];
@@ -155,21 +156,21 @@ function scanMoMEmails() {
           return;
         }
 
-        newRows.push([
-          generateTaskId_(tracker),
-          owner.name,
-          owner.email,
-          action.task,
-          meetingTitle,
-          momDate,
-          STATUS.PENDING,
-          '',
-          0,
-          new Date(),
-          false,
-          sourceKey,
-          '' // Due Date
-        ]);
+        const col = name => TRACKER_HEADERS.indexOf(name);
+        const row = new Array(TRACKER_HEADERS.length).fill('');
+        row[col('TaskID')] = generateTaskId_(tracker);
+        row[col('Owner')] = owner.name;
+        row[col('OwnerEmail')] = owner.email;
+        row[col('Task')] = action.task;
+        row[col('Meeting')] = meetingTitle;
+        row[col('MoM Date')] = momDate;
+        row[col('Status')] = STATUS.PENDING;
+        row[col('Reminder Count')] = 0;
+        row[col('Last Updated')] = new Date();
+        row[col('Notified')] = false;
+        row[col('SourceKey')] = sourceKey;
+        row[col('Category')] = action.category || '';
+        newRows.push(row);
         existingKeys.add(sourceKey);
       });
     });
@@ -180,19 +181,51 @@ function scanMoMEmails() {
   }
 }
 
+// Format (one bullet per line, under a "[Actions]" heading):
+//   - [Category] Task text @Full Name @Another Person
+// [Category] is optional. Multiple @tags on one line means the same task
+// goes to each of those people separately. Also handles Gmail's auto-inserted
+// contact chip, which expands a typed "@Name" into "@Full Name <email@x.com>".
 function parseActionsSection_(body) {
-  const match = body.match(/\[Actions\]([\s\S]*?)(?:\n\s*\[[A-Za-z]|$)/i);
-  if (!match) return [];
-  const lines = match[1].split('\n');
-  const actions = [];
-  lines.forEach(line => {
-    // Handles both a plain typed tag ("@Sanjana: task") and Gmail's auto-inserted
-    // contact chip, which expands to "@Full Name <email@domain.com> : task".
-    const lineMatch = line.match(/^\s*[-*]?\s*@([^<:\-]+?)(?:\s*<[^>]*>)?\s*[:\-]\s*(.+?)\s*$/);
-    if (lineMatch) {
-      actions.push({ nameTag: lineMatch[1].trim(), task: lineMatch[2] });
+  const lines = body.split('\n');
+  const startIdx = lines.findIndex(l => /^\s*\[Actions\]\s*$/i.test(l));
+  if (startIdx === -1) return [];
+
+  const actionLines = [];
+  for (let i = startIdx + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^\s*$/.test(line)) continue; // blank lines within the list are fine
+    if (/^\s*[-*]\s+/.test(line)) {
+      actionLines.push(line);
+    } else {
+      break; // first non-bullet line ends the Actions section
     }
+  }
+
+  const actions = [];
+  actionLines.forEach(line => {
+    let rest = line.replace(/^\s*[-*]\s+/, '');
+
+    const catMatch = rest.match(/^\[([^\]]+)\]\s*/);
+    const category = catMatch ? catMatch[1].trim() : '';
+    if (catMatch) rest = rest.slice(catMatch[0].length);
+
+    const tagPattern = /@([^<@]+?)(?:\s*<[^>]*>)?(?=\s*@|\s*$)/g;
+    const nameTags = [];
+    let firstTagIndex = -1;
+    let m;
+    while ((m = tagPattern.exec(rest)) !== null) {
+      if (firstTagIndex === -1) firstTagIndex = m.index;
+      nameTags.push(m[1].trim());
+    }
+    if (!nameTags.length) return;
+
+    const task = rest.slice(0, firstTagIndex).trim();
+    if (!task) return;
+
+    nameTags.forEach(nameTag => actions.push({ nameTag, task, category }));
   });
+
   return actions;
 }
 
@@ -430,7 +463,8 @@ function getTasksForToken_(token) {
       momDate: data[i][col('MoM Date')],
       status: data[i][col('Status')],
       revisedTimelineDate: data[i][col('Revised Timeline Date')],
-      dueDate: data[i][col('Due Date')]
+      dueDate: data[i][col('Due Date')],
+      category: data[i][col('Category')]
     });
   }
   return { owner: ownerName, tasks };
@@ -490,7 +524,8 @@ function getAdminList_(password) {
       revisedTimelineDate: data[i][col('Revised Timeline Date')],
       reminderCount: data[i][col('Reminder Count')],
       lastUpdated: data[i][col('Last Updated')],
-      dueDate: data[i][col('Due Date')]
+      dueDate: data[i][col('Due Date')],
+      category: data[i][col('Category')]
     });
   }
 

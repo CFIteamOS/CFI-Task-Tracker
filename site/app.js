@@ -51,11 +51,14 @@ function renderTask(task, token, onChange) {
   const dueHtml = task.dueDate
     ? `<span class="sep">-</span><span class="${isOverdue ? 'due-overdue' : ''}">Due ${formatDate(task.dueDate)}</span>`
     : '';
+  const categoryHtml = task.category
+    ? `<span class="badge category-badge">${escapeHtml(task.category)}</span>`
+    : '';
   row.innerHTML = `
     <div class="task-row">
       <input type="checkbox" ${isDone ? 'checked' : ''}>
       <div class="task-main">
-        <div class="task-text ${isDone ? 'done' : ''}">${escapeHtml(task.task)}</div>
+        <div class="task-text ${isDone ? 'done' : ''}">${categoryHtml} ${escapeHtml(task.task)}</div>
         <div class="task-meta">
           <span>${escapeHtml(task.meeting || '')}</span>
           <span class="sep">-</span>
