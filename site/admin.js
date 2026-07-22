@@ -16,7 +16,9 @@ function badgeClass(status) {
 }
 
 let allTasks = [];
+let ownerNames = [];
 let currentFilter = 'all';
+let adminPassword = null;
 
 async function loadDashboard(password) {
   let res;
@@ -32,7 +34,17 @@ async function loadDashboard(password) {
   const data = await res.json();
   if (data.error) throw new Error(data.error);
   allTasks = data.tasks;
+  ownerNames = data.owners || [];
+  adminPassword = password;
   render();
+  populateOwnerDropdown();
+}
+
+function populateOwnerDropdown() {
+  const select = document.getElementById('assignOwner');
+  select.innerHTML = ownerNames.length
+    ? ownerNames.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('')
+    : '<option value="">No owners in the Owners sheet yet</option>';
 }
 
 function render() {
@@ -60,6 +72,7 @@ function render() {
         <td>${formatDate(t.momDate)}</td>
         <td><span class="${badgeClass(t.status)}">${t.status}</span></td>
         <td>${formatDate(t.revisedTimelineDate)}</td>
+        <td>${formatDate(t.dueDate)}</td>
         <td>${t.reminderCount || 0}</td>
       </tr>
     `).join('');
@@ -67,7 +80,7 @@ function render() {
   table.innerHTML = `
     <table>
       <thead>
-        <tr><th>Owner</th><th>Task</th><th>Meeting</th><th>MoM date</th><th>Status</th><th>Revised to</th><th>Reminders</th></tr>
+        <tr><th>Owner</th><th>Task</th><th>Meeting</th><th>MoM date</th><th>Status</th><th>Revised to</th><th>Due</th><th>Reminders</th></tr>
       </thead>
       <tbody>${rows}</tbody>
     </table>
@@ -100,4 +113,46 @@ document.querySelectorAll('.filters button').forEach(btn => {
     currentFilter = btn.dataset.filter;
     render();
   });
+});
+
+document.getElementById('assignBtn').addEventListener('click', async () => {
+  const ownerName = document.getElementById('assignOwner').value;
+  const task = document.getElementById('assignTask').value.trim();
+  const dueDate = document.getElementById('assignDueDate').value;
+  const statusEl = document.getElementById('assignStatus');
+  const btn = document.getElementById('assignBtn');
+
+  statusEl.textContent = '';
+  statusEl.className = 'assign-form-status';
+
+  if (!ownerName || !task) {
+    statusEl.textContent = 'Pick an owner and enter a task.';
+    statusEl.classList.add('error');
+    return;
+  }
+
+  btn.disabled = true;
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'createTask', password: adminPassword, ownerName, task, dueDate })
+    });
+    const data = await res.json();
+    if (data.error) {
+      statusEl.textContent = data.error;
+      statusEl.classList.add('error');
+      return;
+    }
+    statusEl.textContent = `Assigned to ${ownerName}.`;
+    statusEl.classList.add('success');
+    document.getElementById('assignTask').value = '';
+    document.getElementById('assignDueDate').value = '';
+    await loadDashboard(adminPassword);
+  } catch (err) {
+    statusEl.textContent = 'Could not reach the server.';
+    statusEl.classList.add('error');
+  } finally {
+    btn.disabled = false;
+  }
 });

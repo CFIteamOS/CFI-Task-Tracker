@@ -3,10 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Task Tracker · Admin</title>
+  <title>Task Tracker - Admin</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <div class="brand-header">
+    <img src="curefoods-logo.png" alt="Curefoods" onerror="this.style.display='none'">
+    <span>Task Tracker - Admin</span>
+  </div>
   <div class="wrap">
     <div id="login" class="login-box">
       <h1>Admin login</h1>
@@ -17,13 +21,27 @@
     <div id="dashboard" style="display:none">
       <h1>Task tracker</h1>
       <p class="subtitle" id="summary"></p>
+
+      <div class="section-title">Assign a new task</div>
+      <div class="assign-form">
+        <div class="row">
+          <select id="assignOwner"></select>
+          <input type="text" id="assignTask" placeholder="Task description">
+          <input type="date" id="assignDueDate">
+        </div>
+        <div class="row">
+          <button id="assignBtn">Assign task</button>
+          <span class="assign-form-status" id="assignStatus"></span>
+        </div>
+      </div>
+
       <div class="filters">
         <button data-filter="all" class="active">All</button>
         <button data-filter="open">Not done</button>
         <button data-filter="Blocked">Blocked</button>
         <button data-filter="Revised Timeline">Revised timeline</button>
       </div>
-      <div id="table"></div>
+      <div class="table-wrap" id="table"></div>
     </div>
   </div>
   <script src="config.js"></script>

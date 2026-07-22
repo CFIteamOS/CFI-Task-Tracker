@@ -32,12 +32,23 @@ function renderTask(task, token, onChange) {
   row.className = 'card';
 
   const isDone = task.status === 'Done';
+  const isOverdue = !isDone && task.dueDate && new Date(task.dueDate) < new Date(new Date().toDateString());
+  const dueHtml = task.dueDate
+    ? `<span class="sep">-</span><span class="${isOverdue ? 'due-overdue' : ''}">Due ${formatDate(task.dueDate)}</span>`
+    : '';
   row.innerHTML = `
     <div class="task-row">
       <input type="checkbox" ${isDone ? 'checked' : ''}>
       <div class="task-main">
         <div class="task-text ${isDone ? 'done' : ''}">${escapeHtml(task.task)}</div>
-        <div class="task-meta">${escapeHtml(task.meeting || '')} - ${formatDate(task.momDate)} - <span class="${badgeClass(task.status)}">${task.status}</span></div>
+        <div class="task-meta">
+          <span>${escapeHtml(task.meeting || '')}</span>
+          <span class="sep">-</span>
+          <span>${formatDate(task.momDate)}</span>
+          ${dueHtml}
+          <span class="sep">-</span>
+          <span class="${badgeClass(task.status)}">${task.status}</span>
+        </div>
         <div class="controls"></div>
       </div>
     </div>
@@ -120,7 +131,7 @@ async function init() {
     return;
   }
 
-  content.innerHTML = '<div class="loading">Loading your tasks…</div>';
+  content.innerHTML = '<div class="loading">Loading your tasks...</div>';
 
   let data;
   try {

@@ -33,7 +33,7 @@ const STATUS = {
 
 const TRACKER_HEADERS = [
   'TaskID', 'Owner', 'OwnerEmail', 'Task', 'Meeting', 'MoM Date', 'Status',
-  'Revised Timeline Date', 'Reminder Count', 'Last Updated', 'Notified', 'SourceKey'
+  'Revised Timeline Date', 'Reminder Count', 'Last Updated', 'Notified', 'SourceKey', 'Due Date'
 ];
 const OWNERS_HEADERS = ['Name', 'Email', 'Token', 'WelcomeSent'];
 const UNMATCHED_HEADERS = ['Name Tag', 'Task', 'Meeting', 'MoM Date', 'Seen At'];
@@ -87,12 +87,23 @@ function initializeSheets() {
   ensureSheet_(ss, UNMATCHED_SHEET, UNMATCHED_HEADERS);
 }
 
+// Creates the sheet with the given headers if it doesn't exist. If it does
+// exist but is missing headers this code now expects (e.g. after adding a new
+// column), those are appended to the end of the existing header row so older
+// live sheets pick up schema changes automatically.
 function ensureSheet_(ss, name, headers) {
   let sheet = ss.getSheetByName(name);
   if (!sheet) {
     sheet = ss.insertSheet(name);
     sheet.appendRow(headers);
     sheet.setFrozenRows(1);
+    return sheet;
+  }
+  const lastCol = Math.max(sheet.getLastColumn(), 1);
+  const existingHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const missing = headers.filter(h => existingHeaders.indexOf(h) === -1);
+  if (missing.length) {
+    sheet.getRange(1, existingHeaders.length + 1, 1, missing.length).setValues([missing]);
   }
   return sheet;
 }
@@ -151,7 +162,8 @@ function scanMoMEmails() {
           0,
           new Date(),
           false,
-          sourceKey
+          sourceKey,
+          '' // Due Date
         ]);
         existingKeys.add(sourceKey);
       });
@@ -367,6 +379,7 @@ function doPost(e) {
 
   if (payload.action === 'updateStatus') return jsonOut_(updateStatus_(payload));
   if (payload.action === 'adminList') return jsonOut_(getAdminList_(payload.password));
+  if (payload.action === 'createTask') return jsonOut_(createTask_(payload));
   return jsonOut_({ error: 'Unknown action' });
 }
 
@@ -404,7 +417,8 @@ function getTasksForToken_(token) {
       meeting: data[i][col('Meeting')],
       momDate: data[i][col('MoM Date')],
       status: data[i][col('Status')],
-      revisedTimelineDate: data[i][col('Revised Timeline Date')]
+      revisedTimelineDate: data[i][col('Revised Timeline Date')],
+      dueDate: data[i][col('Due Date')]
     });
   }
   return { owner: ownerName, tasks };
@@ -474,8 +488,73 @@ function getAdminList_(password) {
       status: data[i][col('Status')],
       revisedTimelineDate: data[i][col('Revised Timeline Date')],
       reminderCount: data[i][col('Reminder Count')],
-      lastUpdated: data[i][col('Last Updated')]
+      lastUpdated: data[i][col('Last Updated')],
+      dueDate: data[i][col('Due Date')]
     });
   }
-  return { tasks };
+
+  const owners = ensureSheet_(ss, OWNERS_SHEET, OWNERS_HEADERS);
+  const ownersData = owners.getDataRange().getValues();
+  const nameCol = OWNERS_HEADERS.indexOf('Name');
+  const ownerNames = ownersData.slice(1).map(r => r[nameCol]).filter(Boolean);
+
+  return { tasks, owners: ownerNames };
+}
+
+// ---------- admin: create/assign a task directly ----------
+
+function createTask_(payload) {
+  const expected = PropertiesService.getScriptProperties().getProperty('ADMIN_PASSWORD');
+  if (!expected || payload.password !== expected) return { error: 'Unauthorized' };
+
+  const ownerName = payload.ownerName;
+  const task = payload.task;
+  if (!ownerName || !task) return { error: 'Missing fields' };
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const ss = getSpreadsheet_();
+    const owners = ensureSheet_(ss, OWNERS_SHEET, OWNERS_HEADERS);
+    const ownersData = owners.getDataRange().getValues();
+    const nameCol = OWNERS_HEADERS.indexOf('Name');
+    const emailCol = OWNERS_HEADERS.indexOf('Email');
+    const tokenCol = OWNERS_HEADERS.indexOf('Token');
+
+    let ownerRow = -1;
+    let email = null;
+    for (let i = 1; i < ownersData.length; i++) {
+      if (ownersData[i][nameCol] === ownerName) {
+        ownerRow = i;
+        email = ownersData[i][emailCol];
+        break;
+      }
+    }
+    if (ownerRow === -1) return { error: 'Unknown owner' };
+    if (!email) return { error: 'That owner has no email on file' };
+    if (!ownersData[ownerRow][tokenCol]) {
+      owners.getRange(ownerRow + 1, tokenCol + 1).setValue(Utilities.getUuid());
+    }
+
+    const tracker = ensureSheet_(ss, TRACKER_SHEET, TRACKER_HEADERS);
+    const col = name => TRACKER_HEADERS.indexOf(name);
+    const row = new Array(TRACKER_HEADERS.length).fill('');
+    row[col('TaskID')] = generateTaskId_(tracker);
+    row[col('Owner')] = ownerName;
+    row[col('OwnerEmail')] = email;
+    row[col('Task')] = task;
+    row[col('Meeting')] = 'Assigned by admin';
+    row[col('MoM Date')] = new Date();
+    row[col('Status')] = STATUS.PENDING;
+    row[col('Reminder Count')] = 0;
+    row[col('Last Updated')] = new Date();
+    row[col('Notified')] = false;
+    row[col('SourceKey')] = `manual:${Utilities.getUuid()}`;
+    row[col('Due Date')] = payload.dueDate || '';
+
+    tracker.appendRow(row);
+    return { ok: true, id: row[col('TaskID')] };
+  } finally {
+    lock.releaseLock();
+  }
 }

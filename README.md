@@ -26,7 +26,20 @@ can update themselves. You get a password-gated admin dashboard.
 4. `sendReminders` runs every 7 days and nags anyone not Done/Blocked (honoring
    revised timelines), linking to the same permanent checklist.
 5. You open `admin.html`, enter your password, and see every owner's status in
-   one table.
+   one table, filterable by all / not-done / blocked / revised timeline. You
+   can also directly assign a new task to any existing owner from here (task
+   text + optional due date) — it appears on their checklist immediately and
+   flows through the same notification/reminder logic as MoM-parsed tasks.
+
+## Branding
+
+Both pages look for `site/curefoods-logo.png` and show it in the header; if
+that file doesn't exist yet, the header just shows the "Task Tracker" text on
+its own (no broken image icon). Drop a PNG or SVG named exactly
+`curefoods-logo.png` into the `site/` folder (GitHub web UI: Add file →
+Upload files) and it'll pick it up automatically — no code change needed. If
+you use an SVG instead, update the `src="curefoods-logo.png"` references in
+`index.html`/`admin.html` to match the filename.
 
 ## One-time setup
 
