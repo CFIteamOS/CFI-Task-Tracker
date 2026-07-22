@@ -544,7 +544,8 @@ function getAdminList_(password) {
       status: data[i][col('Status')],
       revisedTimelineDate: data[i][col('Revised Timeline Date')],
       reminderCount: data[i][col('Reminder Count')],
-      lastUpdated: data[i][col('Last Updated')]
+      lastUpdated: data[i][col('Last Updated')],
+      comments: data[i][col('Comments')]
     });
   }
 

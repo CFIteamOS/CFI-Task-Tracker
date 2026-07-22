@@ -11,13 +11,6 @@ function formatDate(value) {
   return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-function formatDateTime(value) {
-  if (!value) return '';
-  const d = new Date(value);
-  if (isNaN(d)) return '';
-  return d.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-}
-
 function badgeClass(status) {
   return 'badge ' + status.replace(/\s+/g, '-');
 }
@@ -27,7 +20,6 @@ let ownerNames = [];
 let currentFilter = 'all';
 let adminPassword = null;
 let editingTaskId = null;
-let expandedCommentsId = null;
 
 async function postAction(body) {
   const res = await fetch(API_URL, {
@@ -83,58 +75,30 @@ function render() {
 
   const rows = filtered
     .sort((a, b) => (a.status === 'Done') - (b.status === 'Done'))
-    .map(t => {
-      const mainRow = `
-        <tr data-id="${escapeHtml(t.id)}">
-          <td>${escapeHtml(t.owner)}</td>
-          <td>${escapeHtml(t.task)}</td>
-          <td><span class="${badgeClass(t.status)}">${t.status}</span></td>
-          <td>${formatDate(t.revisedTimelineDate)}</td>
-          <td>
-            <div class="row-actions">
-              <button class="small-btn secondary" data-action="edit">Edit</button>
-              <button class="small-btn danger" data-action="delete">Delete</button>
-              <button class="comments-toggle" data-action="comments">Comments</button>
-            </div>
-          </td>
-        </tr>
-      `;
-      const commentsRow = expandedCommentsId === t.id
-        ? `<tr class="comments-row" data-comments-for="${escapeHtml(t.id)}"><td colspan="5"><div class="comment-list" id="commentList-${escapeHtml(t.id)}">Loading...</div></td></tr>`
-        : '';
-      return mainRow + commentsRow;
-    }).join('');
+    .map(t => `
+      <tr data-id="${escapeHtml(t.id)}">
+        <td>${escapeHtml(t.owner)}</td>
+        <td>${escapeHtml(t.task)}</td>
+        <td><span class="${badgeClass(t.status)}">${t.status}</span></td>
+        <td>${formatDate(t.revisedTimelineDate)}</td>
+        <td>${escapeHtml(t.comments)}</td>
+        <td>
+          <div class="row-actions">
+            <button class="small-btn secondary" data-action="edit">Edit</button>
+            <button class="small-btn danger" data-action="delete">Delete</button>
+          </div>
+        </td>
+      </tr>
+    `).join('');
 
   table.innerHTML = `
     <table>
       <thead>
-        <tr><th>Owner</th><th>Task</th><th>Status</th><th>Revised to</th><th>Actions</th></tr>
+        <tr><th>Owner</th><th>Task</th><th>Status</th><th>Revised to</th><th>Comments</th><th>Actions</th></tr>
       </thead>
       <tbody>${rows}</tbody>
     </table>
   `;
-
-  if (expandedCommentsId) loadComments(expandedCommentsId);
-}
-
-// Admin can view comments (read-only) but not add them — only the task's
-// owner can, from their own checklist.
-async function loadComments(taskId) {
-  const listEl = document.getElementById(`commentList-${taskId}`);
-  if (!listEl) return;
-  const data = await postAction({ action: 'getComments', password: adminPassword, id: taskId });
-  if (data.error) {
-    listEl.innerHTML = `<div class="error">${escapeHtml(data.error)}</div>`;
-    return;
-  }
-  listEl.innerHTML = data.comments.length
-    ? data.comments.map(c => `
-        <div class="comment-item">
-          <div class="comment-meta">${escapeHtml(c.author)} - ${formatDateTime(c.timestamp)}</div>
-          <div>${escapeHtml(c.text)}</div>
-        </div>
-      `).join('')
-    : '<div class="empty" style="padding:8px 0">No comments yet.</div>';
 }
 
 function startEdit(task) {
@@ -237,8 +201,5 @@ document.getElementById('table').addEventListener('click', async (e) => {
     const data = await postAction({ action: 'deleteTask', password: adminPassword, id: taskId });
     if (data.error) { alert(data.error); return; }
     await loadDashboard(adminPassword);
-  } else if (btn.dataset.action === 'comments') {
-    expandedCommentsId = expandedCommentsId === taskId ? null : taskId;
-    render();
   }
 });
