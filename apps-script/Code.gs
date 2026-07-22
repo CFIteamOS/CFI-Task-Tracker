@@ -83,6 +83,14 @@ function ensureSheet_(ss, name, headers) {
   return sheet;
 }
 
+// getRange() throws if asked for 0 rows, which happens whenever a sheet has
+// only its header row (no data yet) — this guards that case.
+function getColumnValues_(sheet, col) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  return sheet.getRange(2, col, lastRow - 1, 1).getValues().flat();
+}
+
 function setAdminPassword(password) {
   PropertiesService.getScriptProperties().setProperty('ADMIN_PASSWORD', password);
 }
@@ -93,8 +101,7 @@ function scanMoMEmails() {
   const ss = getSpreadsheet_();
   const tracker = ensureSheet_(ss, TRACKER_SHEET, TRACKER_HEADERS);
   const existingKeys = new Set(
-    tracker.getRange(2, TRACKER_HEADERS.indexOf('SourceKey') + 1, Math.max(tracker.getLastRow() - 1, 0), 1)
-      .getValues().flat().filter(String)
+    getColumnValues_(tracker, TRACKER_HEADERS.indexOf('SourceKey') + 1).filter(String)
   );
 
   const threads = GmailApp.search('in:sent subject:MoM newer_than:2d');
@@ -183,9 +190,7 @@ function logUnmatched_(ss, nameTag, task, meetingTitle, momDate) {
 
 function generateTaskId_(tracker) {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const existing = new Set(
-    tracker.getRange(2, 1, Math.max(tracker.getLastRow() - 1, 0), 1).getValues().flat()
-  );
+  const existing = new Set(getColumnValues_(tracker, 1));
   let id;
   do {
     id = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
