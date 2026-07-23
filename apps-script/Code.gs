@@ -61,7 +61,7 @@ const COMMENTS_HEADERS = ['TaskID', 'Author', 'Text', 'Timestamp'];
 function setup() {
   setSpreadsheetId('PASTE_YOUR_SHEET_ID_HERE');
   setAdminPassword('PASTE_YOUR_ADMIN_PASSWORD_HERE');
-  setMomSender('PASTE_THE_MOM_SENDER_EMAIL_HERE'); // e.g. 'updates@curefoods.in' — leave as-is to instead search your own Sent Mail
+  setMomSender('PASTE_THE_MOM_SENDER_EMAIL_HERE'); 
   initializeSheets();
 }
 
