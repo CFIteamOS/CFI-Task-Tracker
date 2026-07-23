@@ -23,13 +23,15 @@ can update themselves. You get a password-gated admin dashboard.
    emails instead arrive in your mailbox from a separate address (e.g. an
    automated `updates@yourcompany.com`), set that with `setMomSender` (see
    setup below) and it'll search `from:that-address subject:MoM` instead.
-2. `notifyOwners` emails each owner their personal checklist link once their
-   task is at least `NOTIFY_DELAY_DAYS` (default 3) days past the MoM date —
-   a "welcome" email the first time, then a lighter "new items added" nudge
-   afterwards. The link never changes. The delay is checked per-task inside
-   the function itself, so it doesn't matter how often the trigger runs —
-   e.g. running it daily just means newly-eligible tasks get picked up within
-   a day of crossing the 3-day mark.
+2. `notifyOwners` emails each owner their personal checklist link, once ever
+   per owner, the first time they have a task at least `NOTIFY_DELAY_DAYS`
+   (default 3) days past its MoM date. The link never changes. There's no
+   separate "new items added" email after that — `sendReminders` already
+   sweeps up anything still open regardless of whether it was ever announced,
+   so a second notification would just be redundant. The delay is checked
+   per-task inside the function itself, so it doesn't matter how often the
+   trigger runs — e.g. running it daily just means newly-eligible tasks get
+   picked up within a day of crossing the 3-day mark.
 3. Owners open their link, check tasks off or mark them In Progress / Blocked /
    Revised Timeline — this calls the Apps Script Web App directly and updates
    the Sheet live.

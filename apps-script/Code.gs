@@ -349,6 +349,10 @@ function notifyOwners() {
       const link = `${baseUrl}?token=${token}`;
       const items = pendingByOwner[ownerName];
 
+      // Only ever sent once per owner. New tasks after that don't get a
+      // separate "new items" email — sendReminders already sweeps up
+      // anything open (regardless of Notified) on its own 7-day cycle, so a
+      // second announcement email would just be redundant noise.
       if (!welcomeSent) {
         MailApp.sendEmail({
           to: email,
@@ -359,13 +363,6 @@ function notifyOwners() {
             `Just tick things off (or mark them In Progress / Blocked / Revised Timeline) as you go.`
         });
         owners.getRange(i + 1, welcomeCol + 1).setValue(true);
-      } else {
-        MailApp.sendEmail({
-          to: email,
-          subject: 'New action items added to your checklist',
-          body: `Hi ${ownerName},\n\nNew action items were just added to your checklist:\n\n` +
-            `${items.map(it => `- ${it.task}`).join('\n')}\n\nView/update your full list here:\n${link}`
-        });
       }
 
       items.forEach(it => tracker.getRange(it.row, notifiedColIndex).setValue(true));
