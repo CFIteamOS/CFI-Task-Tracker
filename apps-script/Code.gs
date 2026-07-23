@@ -223,21 +223,40 @@ function parseActionsSection_(body) {
   const startIdx = lines.findIndex(l => /^[\s*_]*\[actions\][\s*_:]*$/i.test(l));
   if (startIdx === -1) return [];
 
-  const actionLines = [];
+  // Long bullets get word-wrapped across multiple physical lines by Gmail's
+  // plain-text export — a wrapped continuation line has no bullet marker of
+  // its own, so it's collected here and merged onto the previous bullet
+  // below, rather than being mistaken for the end of the Actions section.
+  // The distinguishing signal: a real continuation is always immediately
+  // adjacent (no blank line) to the bullet it wraps from. A non-bullet line
+  // that follows a blank line is trailing prose (e.g. a "Thanks!" sign-off)
+  // and means the list has ended — likewise the next "[Something]" heading.
+  const rawLines = [];
+  let sawBlank = false;
   for (let i = startIdx + 1; i < lines.length; i++) {
     const line = lines[i];
-    if (/^\s*$/.test(line)) continue; // blank lines within the list are fine
-    if (/^\s*[-*]\s+/.test(line)) {
-      actionLines.push(line);
-    } else {
-      break; // first non-bullet line ends the Actions section
+    if (/^\s*$/.test(line)) {
+      sawBlank = true;
+      continue;
     }
+    if (/^[\s*_]*\[[^\]]+\][\s*_:]*$/.test(line)) break; // next section heading
+    const isBullet = /^\s*[-*]\s+/.test(line);
+    if (!isBullet && sawBlank) break; // non-bullet line after a blank = end of the list
+    rawLines.push(line);
+    sawBlank = false;
   }
 
-  const actions = [];
-  actionLines.forEach(line => {
-    const rest = line.replace(/^\s*[-*]\s+/, '');
+  const actionLines = [];
+  rawLines.forEach(line => {
+    if (/^\s*[-*]\s+/.test(line)) {
+      actionLines.push(line.replace(/^\s*[-*]\s+/, '').trim());
+    } else if (actionLines.length) {
+      actionLines[actionLines.length - 1] += ' ' + line.trim();
+    }
+  });
 
+  const actions = [];
+  actionLines.forEach(rest => {
     const tagPattern = /@([^<@]+?)(?:\s*<[^>]*>)?(?=\s*@|\s*$)/g;
     const nameTags = [];
     let firstTagIndex = -1;
