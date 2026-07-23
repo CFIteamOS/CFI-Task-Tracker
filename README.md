@@ -124,6 +124,17 @@ on a container binding.
    `https://<you>.github.io/<repo>/site/` (the base, so the emailed link
    becomes `.../site/index.html?token=...`).
 
+## Migrating from an older tracker
+
+[`apps-script/migrate-legacy-tracker.gs`](apps-script/migrate-legacy-tracker.gs)
+is a one-time utility for bringing tasks over from a prior Sheet-based
+tracker. It's a separate file, not part of the regular scan/notify/remind
+flow — paste it into the same Apps Script project, run
+`migrateLegacyTracker()` once, then `sendWelcomeToMigratedOwners()` once, and
+you can delete the file afterward. See the comment at the top of that file
+for exactly what it does and how it avoids duplicating anything the live
+system has already picked up on its own.
+
 ## Notes on security
 - Per-owner tokens and the admin password are the only real secrets. Neither
   lives in the repo — tokens live in the `Owners` sheet, the admin password in
