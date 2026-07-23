@@ -32,14 +32,15 @@ function migrateLegacyTracker() {
   const OLD_SPREADSHEET_ID = '1bb84bb82qa8oDFjlj0rO1I4P3W483GhnPq2-eb8xnDU';
   const oldSs = SpreadsheetApp.openById(OLD_SPREADSHEET_ID);
 
-  const oldTrackerSheet = findSheetByHeaders_(oldSs, ['ID', 'Owner Email', 'Action Item', 'Status']);
-  if (!oldTrackerSheet) throw new Error('Could not find the old tracker table (looked for a sheet with headers ID / Owner Email / Action Item / Status).');
+  const found = findSheetWithHeaderRow_(oldSs, ['ID', 'Owner Email', 'Action Item', 'Status']);
+  if (!found) throw new Error('Could not find the old tracker table (looked for a sheet with a row containing ID / Owner Email / Action Item / Status).');
+  const oldTrackerSheet = found.sheet;
 
   const peopleSheet = findPeopleSheet_(oldSs, oldTrackerSheet);
   const emailToName = peopleSheet ? buildEmailNameMap_(peopleSheet) : {};
 
   const oldData = oldTrackerSheet.getDataRange().getValues();
-  const oldHeaders = oldData[0];
+  const oldHeaders = oldData[found.headerRowIndex];
   const oldCol = name => oldHeaders.indexOf(name);
 
   const ss = getSpreadsheet_();
@@ -66,7 +67,7 @@ function migrateLegacyTracker() {
   const commentsToAdd = [];
   let skippedTest = 0, skippedDuplicate = 0, skippedNoTask = 0, skippedRecent = 0;
 
-  for (let i = 1; i < oldData.length; i++) {
+  for (let i = found.headerRowIndex + 1; i < oldData.length; i++) {
     const row = oldData[i];
     const oldId = String(row[oldCol('ID')] || '').trim();
     if (!oldId) continue;
@@ -168,16 +169,27 @@ function sendWelcomeToMigratedOwners() {
   Logger.log(`Sent welcome email to ${sent} owner(s).`);
 }
 
-// Finds a sheet/tab whose header row (row 1) contains all of the given
-// column names, regardless of which tab it's actually on.
-function findSheetByHeaders_(ss, requiredHeaders) {
+// Finds a sheet/tab that HAS a row containing all of the given column names
+// somewhere in its first 20 rows — not necessarily row 1, since a sheet can
+// have title/spacer rows above the real header (as the old tracker does:
+// a "Task Tracker" title row and a blank row before the actual headers).
+// Returns { sheet, headerRowIndex } (0-based, matching getDataRange()
+// getValues() indexing) or null if no sheet/row matches.
+function findSheetWithHeaderRow_(ss, requiredHeaders) {
   const sheets = ss.getSheets();
   for (let s = 0; s < sheets.length; s++) {
     const sheet = sheets[s];
-    if (sheet.getLastRow() < 1) continue;
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 1) continue;
+    const rowsToScan = Math.min(lastRow, 20);
     const lastCol = Math.max(sheet.getLastColumn(), 1);
-    const header = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(String);
-    if (requiredHeaders.every(h => header.indexOf(h) !== -1)) return sheet;
+    const block = sheet.getRange(1, 1, rowsToScan, lastCol).getValues();
+    for (let r = 0; r < block.length; r++) {
+      const rowValues = block[r].map(String);
+      if (requiredHeaders.every(h => rowValues.indexOf(h) !== -1)) {
+        return { sheet, headerRowIndex: r };
+      }
+    }
   }
   return null;
 }
