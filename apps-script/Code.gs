@@ -216,7 +216,11 @@ function scanMoMEmails() {
 // "@Name" into "@Full Name <email@x.com>".
 function parseActionsSection_(body) {
   const lines = body.split('\n');
-  const startIdx = lines.findIndex(l => /^\s*\[Actions\]\s*$/i.test(l));
+  // Matches a line that's just the "[Actions]" heading, tolerating bold
+  // markup (*[Actions]*, **[Actions]**) that Gmail's plain-text export adds
+  // when the heading was bold in the original email, plus any stray
+  // whitespace/punctuation around it.
+  const startIdx = lines.findIndex(l => /^[\s*_]*\[actions\][\s*_:]*$/i.test(l));
   if (startIdx === -1) return [];
 
   const actionLines = [];
