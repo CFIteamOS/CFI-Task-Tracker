@@ -42,22 +42,64 @@ async function loadDashboard(password) {
   ownerNames = data.owners || [];
   adminPassword = password;
   render();
-  populateOwnerDropdown();
+  populateOwnerPicker();
 }
 
-function populateOwnerDropdown() {
-  const select = document.getElementById('assignOwner');
-  select.innerHTML = ownerNames.length
-    ? ownerNames.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('')
-    : '<option value="">No owners in the Owners sheet yet</option>';
+function populateOwnerPicker() {
+  const picker = document.getElementById('ownerPicker');
+  if (!ownerNames.length) {
+    picker.innerHTML = '<summary>No owners in the Owners sheet yet</summary>';
+    return;
+  }
+  picker.innerHTML = `
+    <summary id="ownerPickerSummary">Select owner(s)</summary>
+    <div class="owner-picker-list">
+      ${ownerNames.map(n => `
+        <label class="owner-picker-item">
+          <input type="checkbox" value="${escapeHtml(n)}"> ${escapeHtml(n)}
+        </label>
+      `).join('')}
+    </div>
+  `;
+  updateOwnerPickerSummary();
+
+  picker.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      // While editing an existing task, only one owner can be selected —
+      // checking a new one unchecks any other.
+      if (editingTaskId && cb.checked) {
+        picker.querySelectorAll('input[type="checkbox"]').forEach(other => {
+          if (other !== cb) other.checked = false;
+        });
+      }
+      updateOwnerPickerSummary();
+    });
+  });
+}
+
+function getSelectedOwners() {
+  return Array.from(document.querySelectorAll('#ownerPicker input[type="checkbox"]:checked')).map(cb => cb.value);
+}
+
+function setSelectedOwners(names) {
+  document.querySelectorAll('#ownerPicker input[type="checkbox"]').forEach(cb => {
+    cb.checked = names.includes(cb.value);
+  });
+  updateOwnerPickerSummary();
+}
+
+function updateOwnerPickerSummary() {
+  const summary = document.getElementById('ownerPickerSummary');
+  if (!summary) return;
+  const selected = getSelectedOwners();
+  summary.textContent = selected.length
+    ? (selected.length <= 2 ? selected.join(', ') : `${selected.length} owners selected`)
+    : 'Select owner(s)';
 }
 
 function render() {
-  const summary = document.getElementById('summary');
   const total = allTasks.length;
   const doneCount = allTasks.filter(t => t.status === 'Done').length;
-  const notDone = total - doneCount;
-  summary.textContent = `${total} total - ${notDone} not done`;
 
   const pct = total ? Math.round((doneCount / total) * 100) : 0;
   document.getElementById('progressFill').style.width = pct + '%';
@@ -104,7 +146,7 @@ function render() {
 function startEdit(task) {
   editingTaskId = task.id;
   document.getElementById('formTitle').textContent = `Editing task ${task.id}`;
-  document.getElementById('assignOwner').value = task.owner;
+  setSelectedOwners([task.owner]);
   document.getElementById('assignTask').value = task.task;
   document.getElementById('assignBtn').textContent = 'Save changes';
   document.getElementById('cancelEditBtn').style.display = 'inline-block';
@@ -115,6 +157,7 @@ function stopEdit() {
   editingTaskId = null;
   document.getElementById('formTitle').textContent = 'Assign a new task';
   document.getElementById('assignTask').value = '';
+  setSelectedOwners([]);
   document.getElementById('assignBtn').textContent = 'Assign task';
   document.getElementById('cancelEditBtn').style.display = 'none';
 }
@@ -150,7 +193,7 @@ document.querySelectorAll('.filters button').forEach(btn => {
 document.getElementById('cancelEditBtn').addEventListener('click', stopEdit);
 
 document.getElementById('assignBtn').addEventListener('click', async () => {
-  const ownerName = document.getElementById('assignOwner').value;
+  const ownerNames = getSelectedOwners();
   const task = document.getElementById('assignTask').value.trim();
   const statusEl = document.getElementById('assignStatus');
   const btn = document.getElementById('assignBtn');
@@ -158,8 +201,8 @@ document.getElementById('assignBtn').addEventListener('click', async () => {
   statusEl.textContent = '';
   statusEl.className = 'assign-form-status';
 
-  if (!ownerName || !task) {
-    statusEl.textContent = 'Pick an owner and enter a task.';
+  if (!ownerNames.length || !task) {
+    statusEl.textContent = 'Pick at least one owner and enter a task.';
     statusEl.classList.add('error');
     return;
   }
@@ -167,15 +210,17 @@ document.getElementById('assignBtn').addEventListener('click', async () => {
   btn.disabled = true;
   try {
     const body = editingTaskId
-      ? { action: 'updateTask', password: adminPassword, id: editingTaskId, ownerName, task }
-      : { action: 'createTask', password: adminPassword, ownerName, task };
+      ? { action: 'updateTask', password: adminPassword, id: editingTaskId, ownerName: ownerNames[0], task }
+      : { action: 'createTask', password: adminPassword, ownerNames, task };
     const data = await postAction(body);
     if (data.error) {
       statusEl.textContent = data.error;
       statusEl.classList.add('error');
       return;
     }
-    statusEl.textContent = editingTaskId ? 'Saved.' : `Assigned to ${ownerName}.`;
+    statusEl.textContent = editingTaskId
+      ? 'Saved.'
+      : (ownerNames.length > 1 ? `Assigned to ${ownerNames.length} people.` : `Assigned to ${ownerNames[0]}.`);
     statusEl.classList.add('success');
     stopEdit();
     await loadDashboard(adminPassword);

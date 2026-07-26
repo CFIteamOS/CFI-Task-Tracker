@@ -40,11 +40,13 @@ can update themselves. You get a password-gated admin dashboard.
 5. You open `admin.html`, enter your password, and see every owner's status in
    one table, filterable by all / not-done / blocked / revised timeline, plus
    an overall completion bar. From here you can:
-   - Assign a new task to any existing owner (task text only) — appears on
-     their checklist immediately, flows through the same notification/reminder
-     logic as MoM-parsed tasks.
+   - Assign a new task to one or several existing owners at once (pick from
+     the multi-select owner list) — creates one copy per person, each
+     appearing on their checklist immediately and flowing through the same
+     notification/reminder logic as MoM-parsed tasks.
    - Edit or delete any existing task (click Edit on a row to load it into
-     the same form; changing the owner re-flags it as unnotified so they get
+     the same form, restricted to a single owner while editing; changing the
+     owner re-flags it as unnotified so they get
      a heads-up about the reassignment).
    - View (but not add) comments on any task.
 6. Owners can also add their own tasks from their checklist page (no owner

@@ -623,34 +623,44 @@ function buildTaskRow_(tracker, fields) {
 
 // ---------- admin: create/assign a task directly ----------
 
+// Accepts either payload.ownerNames (an array — assign the same task to
+// several people at once, each gets their own row) or the older singular
+// payload.ownerName (still supported for a single assignment).
 function createTask_(payload) {
   const expected = PropertiesService.getScriptProperties().getProperty('ADMIN_PASSWORD');
   if (!expected || payload.password !== expected) return { error: 'Unauthorized' };
 
-  const ownerName = payload.ownerName;
+  const ownerNames = Array.isArray(payload.ownerNames)
+    ? payload.ownerNames
+    : (payload.ownerName ? [payload.ownerName] : []);
   const task = payload.task;
-  if (!ownerName || !task) return { error: 'Missing fields' };
+  if (!ownerNames.length || !task) return { error: 'Missing fields' };
 
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
     const ss = getSpreadsheet_();
-    const owner = findOwnerByName_(ss, ownerName);
-    if (!owner) return { error: 'Unknown owner' };
-    if (!owner.email) return { error: 'That owner has no email on file' };
-
     const tracker = ensureSheet_(ss, TRACKER_SHEET, TRACKER_HEADERS);
-    const row = buildTaskRow_(tracker, {
-      owner: ownerName,
-      ownerEmail: owner.email,
-      task,
-      meeting: 'Assigned by admin',
-      notified: false,
-      sourceKey: `manual:${Utilities.getUuid()}`
-    });
+    const ids = [];
 
-    tracker.appendRow(row);
-    return { ok: true, id: row[getHeaderRow_(tracker).indexOf('TaskID')] };
+    for (const ownerName of ownerNames) {
+      const owner = findOwnerByName_(ss, ownerName);
+      if (!owner) return { error: `Unknown owner: ${ownerName}` };
+      if (!owner.email) return { error: `${ownerName} has no email on file` };
+
+      const row = buildTaskRow_(tracker, {
+        owner: ownerName,
+        ownerEmail: owner.email,
+        task,
+        meeting: 'Assigned by admin',
+        notified: false,
+        sourceKey: `manual:${Utilities.getUuid()}`
+      });
+      tracker.appendRow(row);
+      ids.push(row[getHeaderRow_(tracker).indexOf('TaskID')]);
+    }
+
+    return { ok: true, ids };
   } finally {
     lock.releaseLock();
   }
