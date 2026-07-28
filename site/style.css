@@ -499,3 +499,52 @@ th {
 .owner-picker-item input {
   accent-color: var(--accent);
 }
+
+/* Mobile: stack the assign-form fields, and turn the admin table into
+   label/value cards instead of forcing horizontal scroll on a wide table. */
+@media (max-width: 700px) {
+  .wrap { padding: 20px 14px 60px; }
+
+  .assign-form .row { flex-direction: column; align-items: stretch; }
+  .assign-form .row > * { width: 100%; min-width: 0; }
+
+  .filters { gap: 6px; }
+  .filters button { flex: 1 1 calc(50% - 6px); }
+
+  .table-wrap table { min-width: 0; }
+
+  table thead { display: none; }
+
+  table, table tbody, table tr, table td {
+    display: block;
+    width: 100%;
+  }
+
+  table tr {
+    border-bottom: 1px solid var(--border);
+    padding: 10px 12px;
+  }
+
+  table td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    text-align: right;
+    padding: 4px 0;
+    border-bottom: none;
+  }
+
+  table td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    font-size: 0.78rem;
+    color: var(--muted);
+    text-align: left;
+    flex-shrink: 0;
+  }
+
+  table td .row-actions {
+    justify-content: flex-end;
+  }
+}

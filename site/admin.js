@@ -127,12 +127,12 @@ function render() {
     .sort((a, b) => statusRank(a.status) - statusRank(b.status))
     .map(t => `
       <tr data-id="${escapeHtml(t.id)}">
-        <td>${escapeHtml(t.owner)}</td>
-        <td>${escapeHtml(t.task)}</td>
-        <td><span class="${badgeClass(t.status)}">${t.status}</span></td>
-        <td>${formatDate(t.revisedTimelineDate)}</td>
-        <td>${escapeHtml(t.comments)}</td>
-        <td>
+        <td data-label="Owner">${escapeHtml(t.owner)}</td>
+        <td data-label="Task">${escapeHtml(t.task)}</td>
+        <td data-label="Status"><span class="${badgeClass(t.status)}">${t.status}</span></td>
+        <td data-label="Revised to">${formatDate(t.revisedTimelineDate)}</td>
+        <td data-label="Comments">${escapeHtml(t.comments)}</td>
+        <td data-label="Actions">
           <div class="row-actions">
             <button class="small-btn secondary" data-action="edit">Edit</button>
             <button class="small-btn danger" data-action="delete">Delete</button>
