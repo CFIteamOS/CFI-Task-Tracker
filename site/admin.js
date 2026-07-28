@@ -15,6 +15,14 @@ function badgeClass(status) {
   return 'badge ' + status.replace(/\s+/g, '-');
 }
 
+// Done sits below everything still in play; Blocked sits below even Done,
+// since a blocked task needs the least day-to-day attention right now.
+function statusRank(status) {
+  if (status === 'Blocked') return 2;
+  if (status === 'Done') return 1;
+  return 0;
+}
+
 let allTasks = [];
 let ownerNames = [];
 let currentFilter = 'all';
@@ -116,7 +124,7 @@ function render() {
   }
 
   const rows = filtered
-    .sort((a, b) => (a.status === 'Done') - (b.status === 'Done'))
+    .sort((a, b) => statusRank(a.status) - statusRank(b.status))
     .map(t => `
       <tr data-id="${escapeHtml(t.id)}">
         <td>${escapeHtml(t.owner)}</td>

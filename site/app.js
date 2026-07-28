@@ -40,6 +40,23 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+// Comments are entered as plain text with **bold** markers and real line
+// breaks (via the textarea) — this renders those two things as HTML without
+// allowing any other markup through, since the raw text is escaped first.
+function formatCommentText(text) {
+  return escapeHtml(text)
+    .replace(/\n/g, '<br>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+}
+
+// Done sits below everything still in play; Blocked sits below even Done,
+// since a blocked task needs the least day-to-day attention right now.
+function statusRank(status) {
+  if (status === 'Blocked') return 2;
+  if (status === 'Done') return 1;
+  return 0;
+}
+
 let expandedCommentsId = null;
 
 function renderTask(task, token, onChange) {
@@ -124,7 +141,16 @@ function renderTask(task, token, onChange) {
   });
 
   async function loadComments() {
-    commentsArea.innerHTML = '<div class="comment-list">Loading...</div><div class="comment-add"><input type="text" placeholder="Add a comment"><button class="small-btn secondary">Add</button></div>';
+    commentsArea.innerHTML = `
+      <div class="comment-list">Loading...</div>
+      <div class="comment-add">
+        <div class="comment-add-toolbar">
+          <button type="button" class="small-btn secondary comment-bold-btn" title="Bold the selected text"><strong>B</strong></button>
+        </div>
+        <textarea rows="2" placeholder="Add a comment - use **bold**, press Enter for a new line"></textarea>
+        <button class="small-btn secondary comment-add-btn">Add</button>
+      </div>
+    `;
     const data = await postApi({ action: 'getComments', token, id: task.id });
     const list = commentsArea.querySelector('.comment-list');
     if (data.error) {
@@ -133,23 +159,50 @@ function renderTask(task, token, onChange) {
     }
     list.innerHTML = data.comments.length
       ? data.comments.map(c => `
-          <div class="comment-item">
-            <div class="comment-meta">${escapeHtml(c.author)} - ${formatDateTime(c.timestamp)}</div>
-            <div>${escapeHtml(c.text)}</div>
+          <div class="comment-item" data-comment-id="${escapeHtml(c.id)}">
+            <div class="comment-meta">
+              <span>${escapeHtml(c.author)} - ${formatDateTime(c.timestamp)}</span>
+              <button type="button" class="comment-delete-btn">Delete</button>
+            </div>
+            <div class="comment-text">${formatCommentText(c.text)}</div>
           </div>
         `).join('')
       : '<div class="empty" style="padding:8px 0">No comments yet.</div>';
 
-    const input = commentsArea.querySelector('input');
-    const addBtn = commentsArea.querySelector('button');
+    list.querySelectorAll('.comment-delete-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Delete this comment?')) return;
+        const commentId = btn.closest('.comment-item').dataset.commentId;
+        btn.disabled = true;
+        const result = await postApi({ action: 'deleteComment', token, id: task.id, commentId });
+        if (result.error) { alert(result.error); return; }
+        loadComments();
+      });
+    });
+
+    const textarea = commentsArea.querySelector('textarea');
+    const boldBtn = commentsArea.querySelector('.comment-bold-btn');
+    const addBtn = commentsArea.querySelector('.comment-add-btn');
+
+    boldBtn.addEventListener('click', () => {
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const value = textarea.value;
+      const selected = value.slice(start, end) || 'bold text';
+      textarea.value = value.slice(0, start) + '**' + selected + '**' + value.slice(end);
+      textarea.focus();
+      textarea.selectionStart = start + 2;
+      textarea.selectionEnd = start + 2 + selected.length;
+    });
+
     addBtn.addEventListener('click', async () => {
-      const text = input.value.trim();
+      const text = textarea.value.trim();
       if (!text) return;
       addBtn.disabled = true;
       const result = await postApi({ action: 'addComment', token, id: task.id, text });
       addBtn.disabled = false;
       if (result.error) { alert(result.error); return; }
-      input.value = '';
+      textarea.value = '';
       loadComments();
     });
   }
@@ -197,13 +250,19 @@ async function init() {
   ownTaskForm.style.display = 'flex';
 
   function rerender() {
+    const total = data.tasks.length;
+    const doneCount = data.tasks.filter(t => t.status === 'Done').length;
+    const pct = total ? Math.round((doneCount / total) * 100) : 0;
+    document.getElementById('progressFill').style.width = pct + '%';
+    document.getElementById('progressLabel').textContent = total ? `${pct}% complete (${doneCount}/${total})` : '';
+
     subtitle.textContent = `${data.owner} - ${data.tasks.filter(t => t.status !== 'Done').length} open`;
     content.innerHTML = '';
     if (!data.tasks.length) {
       content.innerHTML = '<div class="empty">No action items yet.</div>';
       return;
     }
-    const sorted = [...data.tasks].sort((a, b) => (a.status === 'Done') - (b.status === 'Done'));
+    const sorted = [...data.tasks].sort((a, b) => statusRank(a.status) - statusRank(b.status));
     sorted.forEach(task => content.appendChild(renderTask(task, token, rerender)));
   }
 

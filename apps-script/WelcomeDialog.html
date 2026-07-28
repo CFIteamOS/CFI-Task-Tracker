@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: Arial, sans-serif; font-size: 13px; margin: 0; padding: 16px; }
+    p.hint { color: #666; margin-top: 0; }
+    .list { max-height: 260px; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px; padding: 8px; margin-bottom: 12px; }
+    label { display: block; padding: 4px 2px; cursor: pointer; }
+    .actions { display: flex; justify-content: space-between; align-items: center; }
+    button { font: inherit; padding: 7px 14px; border-radius: 6px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
+    button.primary { background: #10286b; color: #fff; border-color: #10286b; }
+    button:disabled { opacity: 0.5; cursor: default; }
+    #status { font-size: 12px; color: #666; margin-top: 8px; min-height: 1.2em; }
+    #status.error { color: #dc2626; }
+    #status.success { color: #16a34a; }
+    .select-all { margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <p class="hint">Pick who should get their welcome email (or a resend) right now.</p>
+
+  <label class="select-all"><input type="checkbox" id="selectAll"> <strong>Select all</strong></label>
+  <div class="list" id="list">
+    <? names.forEach(function(n) { ?>
+      <label><input type="checkbox" class="owner-cb" value="<?= n ?>"> <?= n ?></label>
+    <? }); ?>
+  </div>
+
+  <div class="actions">
+    <button onclick="google.script.host.close()">Cancel</button>
+    <button class="primary" id="sendBtn">Send welcome email</button>
+  </div>
+  <div id="status"></div>
+
+  <script>
+    const selectAll = document.getElementById('selectAll');
+    const checkboxes = Array.from(document.querySelectorAll('.owner-cb'));
+    const sendBtn = document.getElementById('sendBtn');
+    const status = document.getElementById('status');
+
+    selectAll.addEventListener('change', () => {
+      checkboxes.forEach(cb => { cb.checked = selectAll.checked; });
+    });
+
+    sendBtn.addEventListener('click', () => {
+      const names = checkboxes.filter(cb => cb.checked).map(cb => cb.value);
+      status.textContent = '';
+      status.className = '';
+      if (!names.length) {
+        status.textContent = 'Pick at least one owner.';
+        status.className = 'error';
+        return;
+      }
+      sendBtn.disabled = true;
+      status.textContent = 'Sending...';
+      google.script.run
+        .withSuccessHandler(function (result) {
+          sendBtn.disabled = false;
+          if (result.error) {
+            status.textContent = result.error;
+            status.className = 'error';
+            return;
+          }
+          status.textContent = 'Sent to ' + result.sent.length + ' owner(s).';
+          status.className = 'success';
+        })
+        .withFailureHandler(function (err) {
+          sendBtn.disabled = false;
+          status.textContent = 'Something went wrong: ' + err.message;
+          status.className = 'error';
+        })
+        .sendWelcomeFromSheet(names);
+    });
+  </script>
+</body>
+</html>

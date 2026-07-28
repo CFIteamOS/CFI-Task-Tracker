@@ -30,7 +30,7 @@ const OWNERS_SHEET = 'Owners';
 const UNMATCHED_SHEET = 'Unmatched';
 const COMMENTS_SHEET = 'Comments';
 
-const NOTIFY_DELAY_DAYS = 3; // wait this many days after the MoM date before first notifying an owner
+const NOTIFY_DELAY_DAYS = 0; // notify same-day; set higher if you want to batch up same-day MoM edits first
 
 const STATUS = {
   PENDING: 'Pending',
@@ -49,7 +49,7 @@ const TRACKER_HEADERS = [
 ];
 const OWNERS_HEADERS = ['Name', 'Email', 'Token', 'WelcomeSent'];
 const UNMATCHED_HEADERS = ['Name Tag', 'Task', 'Meeting', 'MoM Date', 'Seen At'];
-const COMMENTS_HEADERS = ['TaskID', 'Author', 'Text', 'Timestamp'];
+const COMMENTS_HEADERS = ['TaskID', 'Author', 'Text', 'Timestamp', 'CommentID'];
 
 // ---------- setup ----------
 //
@@ -59,9 +59,9 @@ const COMMENTS_HEADERS = ['TaskID', 'Author', 'Text', 'Timestamp'];
 // in the function dropdown, and click Run once.
 
 function setup() {
-  setSpreadsheetId('PASTE_YOUR_SHEET_ID_HERE');
-  setAdminPassword('PASTE_YOUR_ADMIN_PASSWORD_HERE');
-  setMomSender('PASTE_THE_MOM_SENDER_EMAIL_HERE'); 
+  setSpreadsheetId('1ICqfy3hvX4yVeppcpTare6zz2QmaBE9pZ-1jZBICzb8');
+  setAdminPassword('Curefoods11');
+  setMomSender('PASTE_THE_MOM_SENDER_EMAIL_HERE');
   initializeSheets();
 }
 
@@ -311,7 +311,7 @@ function generateTaskId_(tracker) {
   return id;
 }
 
-// ---------- step 2: notify owners (welcome or new-items nudge) ----------
+// ---------- step 2: notify owners (welcome, or a "new tasks" nudge) ----------
 
 function notifyOwners() {
   const ss = getSpreadsheet_();
@@ -339,6 +339,23 @@ function notifyOwners() {
   const welcomeCol = OWNERS_HEADERS.indexOf('WelcomeSent');
   const notifiedColIndex = col('Notified') + 1;
 
+  // Backfill: anyone who has tasks on file but was never actually welcomed
+  // (e.g. rows brought in by the legacy migration, or any that got marked
+  // Notified without an email ever going out) gets swept up here too, using
+  // their full current task list — not just the ones still flagged
+  // unnotified — so nobody with real tasks is left without their link.
+  for (let i = 1; i < ownersData.length; i++) {
+    const name = ownersData[i][nameCol];
+    if (!name || ownersData[i][welcomeCol] || pendingByOwner[name]) continue;
+    const theirTasks = [];
+    for (let r = 1; r < trackerData.length; r++) {
+      if (trackerData[r][col('Owner')] === name) {
+        theirTasks.push({ row: r + 1, task: trackerData[r][col('Task')] });
+      }
+    }
+    if (theirTasks.length) pendingByOwner[name] = theirTasks;
+  }
+
   Object.keys(pendingByOwner).forEach(ownerName => {
     for (let i = 1; i < ownersData.length; i++) {
       if (ownersData[i][nameCol] !== ownerName) continue;
@@ -348,11 +365,8 @@ function notifyOwners() {
       const welcomeSent = ownersData[i][welcomeCol];
       const link = `${baseUrl}?token=${token}`;
       const items = pendingByOwner[ownerName];
+      if (!items.length) break;
 
-      // Only ever sent once per owner. New tasks after that don't get a
-      // separate "new items" email — sendReminders already sweeps up
-      // anything open (regardless of Notified) on its own 7-day cycle, so a
-      // second announcement email would just be redundant noise.
       if (!welcomeSent) {
         MailApp.sendEmail({
           to: email,
@@ -363,12 +377,117 @@ function notifyOwners() {
             `Just tick things off (or mark them In Progress / Blocked / Revised Timeline) as you go.`
         });
         owners.getRange(i + 1, welcomeCol + 1).setValue(true);
+      } else {
+        // Already welcomed before — a lighter nudge instead of the full
+        // welcome copy, whenever fresh tasks land for them (from a new MoM,
+        // an admin assignment, or a reassignment).
+        MailApp.sendEmail({
+          to: email,
+          subject: 'New tasks have been added!',
+          body: `Hi ${ownerName},\n\nNew tasks have been added!\n\n` +
+            `${items.map(it => `- ${it.task}`).join('\n')}\n\n` +
+            `View your full checklist here:\n${link}`
+        });
       }
 
       items.forEach(it => tracker.getRange(it.row, notifiedColIndex).setValue(true));
       break;
     }
   });
+}
+
+// ---------- sheet menu: manually (re)send a welcome email to chosen owners ----------
+//
+// The automatic path (notifyOwners, above) covers everyone on its own — this
+// is the manual override, reached from a menu button on the Google Sheet
+// itself (Extensions menu isn't involved; this adds its own top-level
+// "Task Tracker" menu). Useful right after a bulk migration, or if someone
+// lost their original email and needs it resent on demand.
+//
+// onOpen() is a simple trigger — Sheets runs it automatically every time the
+// spreadsheet is opened, no manual trigger setup needed.
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('Task Tracker')
+    .addItem('Send welcome email...', 'showWelcomeDialog')
+    .addToUi();
+}
+
+function showWelcomeDialog() {
+  const ss = getSpreadsheet_();
+  const owners = ensureSheet_(ss, OWNERS_SHEET, OWNERS_HEADERS);
+  const ownersData = owners.getDataRange().getValues();
+  const nameCol = OWNERS_HEADERS.indexOf('Name');
+  const names = ownersData.slice(1).map(r => r[nameCol]).filter(Boolean);
+
+  const template = HtmlService.createTemplateFromFile('WelcomeDialog');
+  template.names = names;
+  SpreadsheetApp.getUi().showModalDialog(
+    template.evaluate().setWidth(360).setHeight(440),
+    'Send welcome email'
+  );
+}
+
+// Called from WelcomeDialog.html via google.script.run. Runs as whoever has
+// the Sheet open (already an authorized editor), so no separate password
+// check is needed here — that's only for the public web app.
+function sendWelcomeFromSheet(ownerNames) {
+  return sendWelcomeCore_(Array.isArray(ownerNames) ? ownerNames : []);
+}
+
+// Bypasses the WelcomeSent flag entirely — (re)sends the welcome link to
+// each named owner right now, listing whatever tasks they currently have.
+// Marks WelcomeSent true and their current rows Notified true, same
+// bookkeeping as the automatic path in notifyOwners.
+function sendWelcomeCore_(ownerNames) {
+  if (!ownerNames.length) return { error: 'Pick at least one owner' };
+
+  const ss = getSpreadsheet_();
+  const tracker = ensureSheet_(ss, TRACKER_SHEET, TRACKER_HEADERS);
+  const owners = ensureSheet_(ss, OWNERS_SHEET, OWNERS_HEADERS);
+  const baseUrl = getSiteBaseUrl_();
+
+  const trackerData = tracker.getDataRange().getValues();
+  const tcol = name => trackerData[0].indexOf(name);
+  const notifiedColIndex = tcol('Notified') + 1;
+
+  const ownersData = owners.getDataRange().getValues();
+  const nameCol = OWNERS_HEADERS.indexOf('Name');
+  const emailCol = OWNERS_HEADERS.indexOf('Email');
+  const tokenCol = OWNERS_HEADERS.indexOf('Token');
+  const welcomeCol = OWNERS_HEADERS.indexOf('WelcomeSent');
+
+  const sent = [];
+  ownerNames.forEach(ownerName => {
+    for (let i = 1; i < ownersData.length; i++) {
+      if (ownersData[i][nameCol] !== ownerName) continue;
+
+      const email = ownersData[i][emailCol];
+      const token = ownersData[i][tokenCol];
+      const link = `${baseUrl}?token=${token}`;
+      const items = [];
+      for (let r = 1; r < trackerData.length; r++) {
+        if (trackerData[r][tcol('Owner')] === ownerName) {
+          items.push({ row: r + 1, task: trackerData[r][tcol('Task')] });
+        }
+      }
+
+      MailApp.sendEmail({
+        to: email,
+        subject: 'Your action items checklist',
+        body: `Hi ${ownerName},\n\nHere's your permanent link to your action items checklist:\n\n${link}\n\n` +
+          (items.length ? `Current items:\n${items.map(it => `- ${it.task}`).join('\n')}\n\n` : '') +
+          `Just tick things off (or mark them In Progress / Blocked / Revised Timeline) as you go.`
+      });
+
+      owners.getRange(i + 1, welcomeCol + 1).setValue(true);
+      items.forEach(it => tracker.getRange(it.row, notifiedColIndex).setValue(true));
+      sent.push(ownerName);
+      break;
+    }
+  });
+
+  return { ok: true, sent };
 }
 
 function getSiteBaseUrl_() {
@@ -466,6 +585,7 @@ function doPost(e) {
   if (payload.action === 'createOwnTask') return jsonOut_(createOwnTask_(payload));
   if (payload.action === 'getComments') return jsonOut_(getComments_(payload));
   if (payload.action === 'addComment') return jsonOut_(addComment_(payload));
+  if (payload.action === 'deleteComment') return jsonOut_(deleteComment_(payload));
   return jsonOut_({ error: 'Unknown action' });
 }
 
@@ -799,6 +919,7 @@ function getComments_(payload) {
   for (let i = 1; i < data.length; i++) {
     if (data[i][col('TaskID')] !== id) continue;
     comments.push({
+      id: data[i][col('CommentID')],
       author: data[i][col('Author')],
       text: data[i][col('Text')],
       timestamp: data[i][col('Timestamp')]
@@ -822,9 +943,47 @@ function addComment_(payload) {
   lock.waitLock(30000);
   try {
     const commentsSheet = ensureSheet_(ss, COMMENTS_SHEET, COMMENTS_HEADERS);
-    commentsSheet.appendRow([id, auth.author, text, new Date()]);
+    const commentId = Utilities.getUuid();
+    const headerRow = getHeaderRow_(commentsSheet);
+    commentsSheet.appendRow(buildRowByHeaders_(headerRow, {
+      TaskID: id,
+      Author: auth.author,
+      Text: text,
+      Timestamp: new Date(),
+      CommentID: commentId
+    }));
     refreshTrackerCommentSummary_(ss, id);
-    return { ok: true };
+    return { ok: true, id: commentId };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// Same ownership rule as adding: only the task's owner (via their token) can
+// delete one of the comments on it.
+function deleteComment_(payload) {
+  const { id, commentId } = payload;
+  if (!id || !commentId) return { error: 'Missing fields' };
+  if (!payload.token) return { error: 'Only the task owner can delete a comment' };
+
+  const ss = getSpreadsheet_();
+  const auth = authorizeForTask_(ss, { token: payload.token }, id);
+  if (auth.error) return auth;
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const sheet = ensureSheet_(ss, COMMENTS_SHEET, COMMENTS_HEADERS);
+    const data = sheet.getDataRange().getValues();
+    const col = name => data[0].indexOf(name);
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][col('TaskID')] === id && data[i][col('CommentID')] === commentId) {
+        sheet.deleteRow(i + 1);
+        refreshTrackerCommentSummary_(ss, id);
+        return { ok: true };
+      }
+    }
+    return { error: 'Comment not found' };
   } finally {
     lock.releaseLock();
   }

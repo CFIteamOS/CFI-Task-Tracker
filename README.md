@@ -23,15 +23,27 @@ can update themselves. You get a password-gated admin dashboard.
    emails instead arrive in your mailbox from a separate address (e.g. an
    automated `updates@yourcompany.com`), set that with `setMomSender` (see
    setup below) and it'll search `from:that-address subject:MoM` instead.
-2. `notifyOwners` emails each owner their personal checklist link, once ever
-   per owner, the first time they have a task at least `NOTIFY_DELAY_DAYS`
-   (default 3) days past its MoM date. The link never changes. There's no
-   separate "new items added" email after that — `sendReminders` already
-   sweeps up anything still open regardless of whether it was ever announced,
-   so a second notification would just be redundant. The delay is checked
-   per-task inside the function itself, so it doesn't matter how often the
-   trigger runs — e.g. running it daily just means newly-eligible tasks get
-   picked up within a day of crossing the 3-day mark.
+2. `notifyOwners` emails each owner the same day they get a task (controlled
+   by `NOTIFY_DELAY_DAYS`, default 0 — raise it if you'd rather batch up
+   same-day MoM edits before emailing). The **first** task an owner ever gets
+   triggers a welcome email with their permanent checklist link. Any task
+   after that — from a new MoM, an admin assignment, or a reassignment —
+   triggers a shorter "New tasks have been added!" nudge instead, listing
+   just the new items, since they already have their link. It also backfills:
+   anyone who already has tasks on file but was never actually welcomed (e.g.
+   rows brought in by the legacy migration) gets caught and emailed their
+   link on the next run, using their full current task list. Since Apps
+   Script triggers aren't real-time, run this trigger frequently (e.g. every
+   hour) if same-day/near-instant delivery matters.
+
+   You can also trigger this manually, for specific people, straight from the
+   Google Sheet: a **Task Tracker** menu appears in the Sheet's menu bar
+   (added automatically whenever you open it) with a **Send welcome
+   email...** item. It opens a dialog listing everyone in the `Owners`
+   sheet — tick whoever you want (or "Select all") and it emails each of
+   them their permanent link plus their current task list immediately,
+   regardless of whether they were auto-welcomed already. Handy right after
+   a bulk migration, or if someone lost their original email.
 3. Owners open their link, check tasks off or mark them In Progress / Blocked /
    Revised Timeline — this calls the Apps Script Web App directly and updates
    the Sheet live.
@@ -48,16 +60,24 @@ can update themselves. You get a password-gated admin dashboard.
      the same form, restricted to a single owner while editing; changing the
      owner re-flags it as unnotified so they get
      a heads-up about the reassignment).
-   - View (but not add) comments on any task.
+   - View (but not add or delete) comments on any task.
 6. Owners can also add their own tasks from their checklist page (no owner
-   picker needed — it's always added under them), and can leave comments on
-   any of their own tasks — a running, timestamped log, not a single
-   overwritable note. Useful for context like "why is this blocked." Only the
-   task's owner can add a comment; the admin dashboard can view but not add
-   one. The full log lives in the `Comments` sheet; the `Tracker` sheet's own
-   `Comments` column is just a synced summary for at-a-glance reading — feel
-   free to drag that column next to `Task` (or anywhere else) in the Sheet UI,
-   every function looks columns up by name, not position.
+   picker needed — it's always added under them), and their checklist page
+   shows their own completion progress bar. They can leave comments on any of
+   their own tasks — a running, timestamped log, not a single overwritable
+   note — using **bold** text (a Bold button wraps the selection, or type
+   `**like this**` yourself) and real line breaks (the comment box is a
+   textarea, so Enter just makes a new line). They can also delete their own
+   comments. Only the task's owner can add or delete a comment; the admin
+   dashboard can view but not add or delete one. The full log lives in the
+   `Comments` sheet (each row has its own `CommentID`); the `Tracker` sheet's
+   own `Comments` column is just a synced plain-text summary for at-a-glance
+   reading — feel free to drag that column next to `Task` (or anywhere else)
+   in the Sheet UI, every function looks columns up by name, not position.
+   On both the owner checklist and the admin table, tasks are sorted with
+   anything still in play first, `Done` below that, and `Blocked` at the very
+   bottom (since a blocked task needs the least day-to-day attention right
+   now).
 
 ## Branding
 
@@ -82,7 +102,16 @@ on a container binding.
 2. In the Apps Script editor, delete the default `Code.gs` content and paste in
    [`apps-script/Code.gs`](apps-script/Code.gs). Also update the manifest
    (Project Settings → "Show appsscript.json") with
-   [`apps-script/appsscript.json`](apps-script/appsscript.json).
+   [`apps-script/appsscript.json`](apps-script/appsscript.json). Then add a
+   new HTML file (File → New → HTML) named exactly `WelcomeDialog`, and paste
+   in [`apps-script/WelcomeDialog.html`](apps-script/WelcomeDialog.html) — this
+   is the dialog behind the Sheet's "Send welcome email" menu button (see
+   step 2 above).
+   **Note:** the "Task Tracker" menu only appears automatically if this is a
+   Sheet-bound script (Sheet → Extensions → Apps Script), since `onOpen` is a
+   simple trigger and those only auto-fire for bound scripts. If you're using
+   a standalone project instead, you can still open the dialog by running
+   `showWelcomeDialog` from the Apps Script editor directly.
 3. Apps Script's Run button always calls a function with zero arguments, so
    you can't run `setSpreadsheetId('...')` directly. Instead, find the `setup`
    function near the top of the file and fill in its placeholder strings:
@@ -106,8 +135,9 @@ on a container binding.
    the dropdown, and click Run once — this is what gets embedded in the
    emailed links.
 7. Triggers (clock icon in the left sidebar) → add three time-driven triggers:
-   - `scanMoMEmails` — e.g. every few hours, or daily.
-   - `notifyOwners` — daily, shortly after `scanMoMEmails`.
+   - `scanMoMEmails` — e.g. every hour, or every few hours.
+   - `notifyOwners` — every hour (or as often as `scanMoMEmails`), shortly
+     after it, so welcome/new-task emails go out same-day.
    - `sendReminders` — every 7 days.
 
 ### 2. Static site

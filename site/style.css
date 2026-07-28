@@ -359,11 +359,57 @@ th {
   color: var(--muted);
   font-size: 0.75rem;
   margin-bottom: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.comment-item .comment-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.comment-delete-btn {
+  background: none;
+  border: none;
+  color: var(--blocked);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
 }
 
 .comment-add {
   display: flex;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.comment-add-toolbar {
+  display: flex;
+  gap: 6px;
+}
+
+.comment-add-toolbar button {
+  padding: 3px 10px;
+}
+
+.comment-add textarea {
+  font: inherit;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  padding: 7px 10px;
+  background: var(--card);
+  color: var(--text);
+  resize: vertical;
+  min-height: 56px;
+}
+
+.comment-add textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .comment-add input { flex: 1; }
