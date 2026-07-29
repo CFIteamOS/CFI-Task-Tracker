@@ -23,6 +23,33 @@ function statusRank(status) {
   return 0;
 }
 
+function formatRelativeTime(value) {
+  if (!value) return '';
+  const d = new Date(value);
+  if (isNaN(d)) return '';
+  const minutes = Math.floor((Date.now() - d.getTime()) / 60000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+// "New" is tracked per browser, not per person — there's no per-admin login,
+// just the one shared password. lastVisit is read once when the page loads
+// (before this session's own visit gets stamped in), so anything commented
+// since your last time here stays flagged as new for the rest of THIS
+// session, even as the dashboard silently reloads after edits.
+const LAST_VISIT_KEY = 'taskTrackerLastVisit';
+let sessionLastVisit = null;
+let hasStampedThisVisit = false;
+
+function isNewComment(task) {
+  if (!task.lastCommentAt || !sessionLastVisit) return false;
+  return new Date(task.lastCommentAt) > sessionLastVisit;
+}
+
 let allTasks = [];
 let ownerNames = [];
 let currentFilter = 'all';
@@ -49,6 +76,14 @@ async function loadDashboard(password) {
   allTasks = data.tasks;
   ownerNames = data.owners || [];
   adminPassword = password;
+
+  if (!hasStampedThisVisit) {
+    const stored = localStorage.getItem(LAST_VISIT_KEY);
+    sessionLastVisit = stored ? new Date(stored) : null;
+    localStorage.setItem(LAST_VISIT_KEY, new Date().toISOString());
+    hasStampedThisVisit = true;
+  }
+
   render();
   populateOwnerPicker();
 }
@@ -113,8 +148,27 @@ function render() {
   document.getElementById('progressFill').style.width = pct + '%';
   document.getElementById('progressLabel').textContent = `${pct}% complete (${doneCount}/${total})`;
 
+  const newCount = allTasks.filter(isNewComment).length;
+  const banner = document.getElementById('newCommentsBanner');
+  const newCommentsBtn = document.getElementById('newCommentsFilterBtn');
+  if (newCount) {
+    banner.style.display = 'flex';
+    banner.textContent = `${newCount} task${newCount > 1 ? 's have' : ' has'} new comments since your last visit`;
+    newCommentsBtn.style.display = 'inline-block';
+    newCommentsBtn.textContent = `New comments (${newCount})`;
+  } else {
+    banner.style.display = 'none';
+    newCommentsBtn.style.display = 'none';
+    if (currentFilter === 'newComments') {
+      currentFilter = 'all';
+      document.querySelectorAll('.filters button').forEach(b => b.classList.remove('active'));
+      document.querySelector('.filters button[data-filter="all"]').classList.add('active');
+    }
+  }
+
   let filtered = allTasks;
   if (currentFilter === 'open') filtered = allTasks.filter(t => t.status !== 'Done');
+  else if (currentFilter === 'newComments') filtered = allTasks.filter(isNewComment);
   else if (currentFilter !== 'all') filtered = allTasks.filter(t => t.status === currentFilter);
 
   const table = document.getElementById('table');
@@ -125,13 +179,24 @@ function render() {
 
   const rows = filtered
     .sort((a, b) => statusRank(a.status) - statusRank(b.status))
-    .map(t => `
-      <tr data-id="${escapeHtml(t.id)}">
+    .map(t => {
+      const isNew = isNewComment(t);
+      const commentCell = t.lastCommentAt
+        ? `
+          <div class="comment-cell-meta">
+            ${isNew ? '<span class="badge-new">New</span>' : ''}
+            <span class="comment-cell-time">${formatRelativeTime(t.lastCommentAt)}</span>
+          </div>
+          <div class="comment-cell-text">${escapeHtml(t.lastCommentText)}</div>
+        `
+        : '';
+      return `
+      <tr data-id="${escapeHtml(t.id)}" class="${isNew ? 'row-new' : ''}">
         <td data-label="Owner">${escapeHtml(t.owner)}</td>
         <td data-label="Task">${escapeHtml(t.task)}</td>
         <td data-label="Status"><span class="${badgeClass(t.status)}">${t.status}</span></td>
         <td data-label="Revised to">${formatDate(t.revisedTimelineDate)}</td>
-        <td data-label="Comments">${escapeHtml(t.comments)}</td>
+        <td data-label="Comments">${commentCell}</td>
         <td data-label="Actions">
           <div class="row-actions">
             <button class="small-btn secondary" data-action="edit">Edit</button>
@@ -139,7 +204,8 @@ function render() {
           </div>
         </td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
 
   table.innerHTML = `
     <table>

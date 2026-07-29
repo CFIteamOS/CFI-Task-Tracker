@@ -13,6 +13,10 @@
   --revised: #7c3aed;
   --shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 2px 6px rgba(16, 24, 40, 0.06);
   --shadow-hover: 0 2px 4px rgba(16, 24, 40, 0.06), 0 6px 16px rgba(16, 24, 40, 0.1);
+  --new-bg: #eaf1ff;
+  --new-border: #3b6fd6;
+  --new-badge-bg: #3b6fd6;
+  --new-badge-text: #ffffff;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -25,6 +29,10 @@
     --accent: #6784ff;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.4);
     --shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.35), 0 8px 20px rgba(0, 0, 0, 0.45);
+    --new-bg: rgba(59, 111, 214, 0.18);
+    --new-border: #7ea1e8;
+    --new-badge-bg: #7ea1e8;
+    --new-badge-text: #0b1330;
   }
 }
 
@@ -498,6 +506,53 @@ th {
 
 .owner-picker-item input {
   accent-color: var(--accent);
+}
+
+.new-comments-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--new-bg);
+  color: var(--new-border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 0.85rem;
+  margin-bottom: 14px;
+}
+
+tr.row-new {
+  background: var(--new-bg);
+  border-left: 3px solid var(--new-border);
+}
+
+tr.row-new td:first-child {
+  padding-left: 7px;
+}
+
+.badge-new {
+  display: inline-block;
+  background: var(--new-badge-bg);
+  color: var(--new-badge-text);
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+
+.comment-cell-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.comment-cell-time {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.comment-cell-text {
+  font-size: 0.85rem;
 }
 
 /* Mobile: stack the assign-form fields, and turn the admin table into

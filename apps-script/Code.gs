@@ -673,10 +673,29 @@ function getAdminList_(password) {
   const data = tracker.getDataRange().getValues();
   const col = name => data[0].indexOf(name);
 
+  // Latest comment per task, computed fresh from the Comments sheet (the
+  // source of truth) rather than the Tracker's joined summary column — the
+  // admin table only ever needs to show the single most recent comment plus
+  // when it landed, not the full thread.
+  const commentsSheet = ensureSheet_(ss, COMMENTS_SHEET, COMMENTS_HEADERS);
+  const commentsData = commentsSheet.getDataRange().getValues();
+  const ccol = name => commentsData[0].indexOf(name);
+  const latestCommentByTask = {};
+  for (let i = 1; i < commentsData.length; i++) {
+    const taskId = commentsData[i][ccol('TaskID')];
+    const timestamp = commentsData[i][ccol('Timestamp')];
+    const existing = latestCommentByTask[taskId];
+    if (!existing || new Date(timestamp) > new Date(existing.timestamp)) {
+      latestCommentByTask[taskId] = { text: commentsData[i][ccol('Text')], timestamp };
+    }
+  }
+
   const tasks = [];
   for (let i = 1; i < data.length; i++) {
+    const taskId = data[i][col('TaskID')];
+    const latestComment = latestCommentByTask[taskId];
     tasks.push({
-      id: data[i][col('TaskID')],
+      id: taskId,
       owner: data[i][col('Owner')],
       task: data[i][col('Task')],
       meeting: data[i][col('Meeting')],
@@ -685,7 +704,8 @@ function getAdminList_(password) {
       revisedTimelineDate: data[i][col('Revised Timeline Date')],
       reminderCount: data[i][col('Reminder Count')],
       lastUpdated: data[i][col('Last Updated')],
-      comments: data[i][col('Comments')]
+      lastCommentText: latestComment ? latestComment.text : '',
+      lastCommentAt: latestComment ? latestComment.timestamp : ''
     });
   }
 
@@ -914,12 +934,22 @@ function getComments_(payload) {
   const sheet = ensureSheet_(ss, COMMENTS_SHEET, COMMENTS_HEADERS);
   const data = sheet.getDataRange().getValues();
   const col = name => data[0].indexOf(name);
+  const commentIdCol = col('CommentID') + 1;
 
   const comments = [];
   for (let i = 1; i < data.length; i++) {
     if (data[i][col('TaskID')] !== id) continue;
+
+    // Comments added before the CommentID column existed have a blank one —
+    // backfill it here on first read so they become deletable too.
+    let commentId = data[i][col('CommentID')];
+    if (!commentId) {
+      commentId = Utilities.getUuid();
+      sheet.getRange(i + 1, commentIdCol).setValue(commentId);
+    }
+
     comments.push({
-      id: data[i][col('CommentID')],
+      id: commentId,
       author: data[i][col('Author')],
       text: data[i][col('Text')],
       timestamp: data[i][col('Timestamp')]

@@ -60,7 +60,13 @@ can update themselves. You get a password-gated admin dashboard.
      the same form, restricted to a single owner while editing; changing the
      owner re-flags it as unnotified so they get
      a heads-up about the reassignment).
-   - View (but not add or delete) comments on any task.
+   - View (but not add or delete) comments on any task. The Comments column
+     shows just the latest comment plus how long ago it landed (no author
+     name), and any task with a comment added since your last visit to the
+     dashboard gets a "New" badge, a highlighted row, and is counted in a
+     banner + a "New comments" filter pill — tracked per browser (via
+     localStorage), not per person, since there's no separate login per
+     admin.
 6. Owners can also add their own tasks from their checklist page (no owner
    picker needed — it's always added under them), and their checklist page
    shows their own completion progress bar. They can leave comments on any of
