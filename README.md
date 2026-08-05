@@ -17,8 +17,13 @@ can update themselves. You get a password-gated admin dashboard.
    Any leading `[Category]` tag is left as plain text at the start of the
    task (nothing is parsed out of it). Tagging multiple people on one line
    creates a separate copy of that task on each of their checklists. Works
-   with both a plainly typed `@Name` and Gmail's auto-inserted contact chip
-   (`@Full Name <email@x.com>`).
+   with a plainly typed `@Name`, Gmail's auto-inserted contact chip
+   (`@Full Name <email@x.com>`), or a raw email address typed as the tag
+   (`@person@domain.com` is read as one tag, not split at the embedded `@`) —
+   `resolveOwner_` matches an email-shaped tag against the Owners sheet's
+   Email column too, not just Name. A tag that starts with a digit (e.g.
+   `@99` used as informal price shorthand, not a real mention) is ignored
+   rather than logged to Unmatched as a fake person.
    By default it searches your own Sent Mail (`in:sent subject:MoM`). If MoM
    emails instead arrive in your mailbox from a separate address (e.g. an
    automated `updates@yourcompany.com`), set that with `setMomSender` (see

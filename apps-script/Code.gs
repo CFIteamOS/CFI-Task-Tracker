@@ -171,6 +171,34 @@ function setAdminPassword(password) {
   PropertiesService.getScriptProperties().setProperty('ADMIN_PASSWORD', password);
 }
 
+// Temporary diagnostic — run this from the editor, then check View > Logs
+// (Ctrl+Enter) for exactly what parseActionsSection_ saw and extracted from
+// each matching MoM email, so a "missing action items" report can be
+// root-caused against the real data instead of guesswork. Safe to delete
+// once the issue's found.
+function debugParseActions() {
+  const threads = GmailApp.search(getMomSearchQuery_());
+  Logger.log(`Search query: ${getMomSearchQuery_()}`);
+  Logger.log(`Found ${threads.length} thread(s).`);
+
+  threads.forEach(thread => {
+    thread.getMessages().forEach(message => {
+      const subject = message.getSubject();
+      const body = message.getPlainBody();
+      const actions = parseActionsSection_(body);
+
+      Logger.log('==================================================');
+      Logger.log(`Subject: ${subject}`);
+      Logger.log(`Date: ${message.getDate()}`);
+      Logger.log(`--- Raw body (between [Actions] and end, or first 3000 chars) ---`);
+      const actionsIdx = body.search(/\[actions\]/i);
+      Logger.log(actionsIdx === -1 ? '(no [Actions] heading found at all)' : body.slice(actionsIdx, actionsIdx + 3000));
+      Logger.log(`--- Parsed ${actions.length} action(s) ---`);
+      actions.forEach((a, i) => Logger.log(`${i + 1}. @${a.nameTag} -> "${a.task}"`));
+    });
+  });
+}
+
 // ---------- step 1: scan sent MoM emails ----------
 
 function scanMoMEmails() {
@@ -273,13 +301,22 @@ function parseActionsSection_(body) {
 
   const actions = [];
   actionLines.forEach(rest => {
-    const tagPattern = /@([^<@]+?)(?:\s*<[^>]*>)?(?=\s*@|\s*$)/g;
+    // A new tag only starts at an "@" preceded by whitespace (or the very
+    // start) — this lets an embedded "@" survive as part of the SAME tag
+    // when someone mentions a raw email address with no space before its
+    // domain (e.g. "@venkanna@milletexpress.in" is one tag, not two).
+    const tagPattern = /@([^<]+?)(?:\s*<[^>]*>)?(?=\s+@|\s*$)/g;
     const nameTags = [];
     let firstTagIndex = -1;
     let m;
     while ((m = tagPattern.exec(rest)) !== null) {
       if (firstTagIndex === -1) firstTagIndex = m.index;
-      nameTags.push(m[1].trim());
+      const tag = m[1].trim();
+      // A real name never starts with a digit — this filters out informal
+      // price/number shorthand like "@99" or "@199" that isn't a mention at
+      // all, so it doesn't get logged to Unmatched as a fake person.
+      if (/^\d/.test(tag)) continue;
+      nameTags.push(tag);
     }
     if (!nameTags.length) return;
 
@@ -295,19 +332,26 @@ function parseActionsSection_(body) {
 function resolveOwner_(ss, nameTag) {
   const owners = ensureSheet_(ss, OWNERS_SHEET, OWNERS_HEADERS);
   const data = owners.getDataRange().getValues();
+  // Some MoMs tag people by raw email address instead of name (e.g. an
+  // external contact like "@venkanna@milletexpress.in") — match against the
+  // Owners' Email column too in that case, not just the Name column.
+  const looksLikeEmail = nameTag.indexOf('@') !== -1;
+
   for (let i = 1; i < data.length; i++) {
     const name = String(data[i][0] || '');
-    if (name.toLowerCase() === nameTag.toLowerCase() ||
-        name.toLowerCase().startsWith(nameTag.toLowerCase())) {
-      const email = data[i][1];
-      if (!email) return null;
-      let token = data[i][2];
-      if (!token) {
-        token = Utilities.getUuid();
-        owners.getRange(i + 1, 3).setValue(token);
-      }
-      return { name, email, token };
+    const email = String(data[i][1] || '');
+    const matchesByName = name.toLowerCase() === nameTag.toLowerCase() ||
+      name.toLowerCase().startsWith(nameTag.toLowerCase());
+    const matchesByEmail = looksLikeEmail && email.toLowerCase() === nameTag.toLowerCase();
+    if (!matchesByName && !matchesByEmail) continue;
+
+    if (!email) return null;
+    let token = data[i][2];
+    if (!token) {
+      token = Utilities.getUuid();
+      owners.getRange(i + 1, 3).setValue(token);
     }
+    return { name, email, token };
   }
   return null;
 }
