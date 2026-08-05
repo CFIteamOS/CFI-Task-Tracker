@@ -199,6 +199,91 @@ function debugParseActions() {
   });
 }
 
+// One-time manual fixup for the Olio/Arambam batch that got misparsed before
+// the @tag regex was fixed (split email addresses, digit-led price shorthand
+// read as fake mentions). Run this once from the editor, then delete it —
+// it's not part of the regular scan/notify/remind flow.
+function fixupOlioArambamOwners_Aug2026() {
+  const ss = getSpreadsheet_();
+  const tracker = ensureSheet_(ss, TRACKER_SHEET, TRACKER_HEADERS);
+  const headerRow = getHeaderRow_(tracker);
+
+  addOwnerIfMissing_(ss, 'Sakshi Agrawal', 'sakshi.ag@curefoods.in');
+  addOwnerIfMissing_(ss, 'Venkanna Godavarthi', 'venkanna@milletexpress.in');
+
+  const olioMeeting = 'Olio App Launch | MoM | 31 Jul';
+  const olioDate = new Date(2026, 6, 31);
+  const arambamOwnlyMeeting = '99 Arambam stack selection on Ownly | MoM | 31 Jul';
+  const arambamOwnlyDate = new Date(2026, 6, 31);
+  const arambamRepeatMeeting = 'Scaling Arambam brand repeat | MoM | 30 Jul';
+  const arambamRepeatDate = new Date(2026, 6, 30);
+
+  const sakshi = { owner: 'Sakshi Agrawal', email: 'sakshi.ag@curefoods.in' };
+  const venkanna = { owner: 'Venkanna Godavarthi', email: 'venkanna@milletexpress.in' };
+
+  const rowsToAdd = [
+    { ...sakshi, task: '[Olio] Add lock screen updates for order status on consumer phone', meeting: olioMeeting, momDate: olioDate },
+    { ...sakshi, task: '[Olio] Remove "All" tab from menu', meeting: olioMeeting, momDate: olioDate },
+    { ...sakshi, task: '[Olio] Simplify menu to show only a "Sides" tab, with item flow: Diet Coke → Desserts → Sides', meeting: olioMeeting, momDate: olioDate },
+
+    { ...venkanna, task: '[Arambam] Ownly masala dosa', meeting: arambamOwnlyMeeting, momDate: arambamOwnlyDate },
+    { ...venkanna, task: '[Arambam] Check whether competitors are selling veg biryani; Try veg biryani in ME', meeting: arambamOwnlyMeeting, momDate: arambamOwnlyDate },
+    { ...venkanna, task: '[Arambam] Introduce Paneer 65 in Hyd', meeting: arambamOwnlyMeeting, momDate: arambamOwnlyDate },
+    { ...venkanna, task: '[Arambam] Evaluate whether specific hyderabad biryani SKUs are required; Finalize exclusive Hyderabad menu and pricing for OWnly launch', meeting: arambamOwnlyMeeting, momDate: arambamOwnlyDate },
+    { ...venkanna, task: '[General] Introduce a ₹99 price point across categories (rice bowls, noodles) on the Ownly platform wherever possible', meeting: arambamOwnlyMeeting, momDate: arambamOwnlyDate },
+
+    { ...venkanna, task: '[Arambam] Region cut on whether the repeat items in Arambam are easily available in North & West', meeting: arambamRepeatMeeting, momDate: arambamRepeatDate },
+    { ...venkanna, task: '[Arambam] Price increase for Arambam: ₹10 now + add ghee', meeting: arambamRepeatMeeting, momDate: arambamRepeatDate },
+    { ...venkanna, task: '[All 3] New rice packaging across all 3 brands to be rolled out: Increase by ₹10', meeting: arambamRepeatMeeting, momDate: arambamRepeatDate },
+    { ...venkanna, task: "[Arambam] Arambam SKUs to be renamed 'with ghee'", meeting: arambamRepeatMeeting, momDate: arambamRepeatDate },
+    { ...venkanna, task: '[Arambam] Offer add-on ghee sachets (2 sachets for Rs 20)', meeting: arambamRepeatMeeting, momDate: arambamRepeatDate },
+    { ...venkanna, task: '[Arambam] 4CP exclusivity to be checked', meeting: arambamRepeatMeeting, momDate: arambamRepeatDate }
+  ];
+
+  const newRows = rowsToAdd.map(r => buildRowByHeaders_(headerRow, {
+    TaskID: generateTaskId_(tracker),
+    Owner: r.owner,
+    OwnerEmail: r.email,
+    Task: r.task,
+    Meeting: r.meeting,
+    'MoM Date': r.momDate,
+    Status: STATUS.PENDING,
+    'Reminder Count': 0,
+    'Last Updated': new Date(),
+    Notified: false,
+    SourceKey: `manual-fixup:${Utilities.getUuid()}`
+  }));
+
+  tracker.getRange(tracker.getLastRow() + 1, 1, newRows.length, headerRow.length).setValues(newRows);
+
+  // Remove the now-resolved rows from Unmatched. Deliberately leaves the
+  // "199" row alone (the Nomad/SuperYou task) — that one was only ever
+  // tagged with a price reference, not a real person, so there's no correct
+  // owner to assign it to automatically.
+  const unmatched = ensureSheet_(ss, UNMATCHED_SHEET, UNMATCHED_HEADERS);
+  const uData = unmatched.getDataRange().getValues();
+  const nameTagCol = UNMATCHED_HEADERS.indexOf('Name Tag');
+  const namesToRemove = new Set(['Sakshi Agrawal', '89 (Discount from 99 to 89)', 'venkanna', 'milletexpress.in']);
+  for (let i = uData.length - 1; i >= 1; i--) {
+    if (namesToRemove.has(String(uData[i][nameTagCol]))) {
+      unmatched.deleteRow(i + 1);
+    }
+  }
+
+  Logger.log(`Added ${newRows.length} tasks for Sakshi Agrawal and Venkanna Godavarthi. Cleaned up resolved Unmatched rows.`);
+}
+
+function addOwnerIfMissing_(ss, name, email) {
+  const owners = ensureSheet_(ss, OWNERS_SHEET, OWNERS_HEADERS);
+  const data = owners.getDataRange().getValues();
+  const nameCol = OWNERS_HEADERS.indexOf('Name');
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][nameCol] || '').toLowerCase() === name.toLowerCase()) return;
+  }
+  const headerRow = getHeaderRow_(owners);
+  owners.appendRow(buildRowByHeaders_(headerRow, { Name: name, Email: email }));
+}
+
 // ---------- step 1: scan sent MoM emails ----------
 
 function scanMoMEmails() {
