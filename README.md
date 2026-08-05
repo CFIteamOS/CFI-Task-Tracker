@@ -95,6 +95,25 @@ Upload files) and it'll pick it up automatically — no code change needed. If
 you use an SVG instead, update the `src="curefoods-logo.png"` references in
 `index.html`/`admin.html` to match the filename.
 
+## Running a pilot with a subset of people
+
+The Owners sheet has a **Pilot** checkbox column. While anyone's box is
+unchecked, `notifyOwners` and `sendReminders` silently skip them — no welcome
+email, no nudge, no reminder — even though `scanMoMEmails` keeps filing their
+tasks as normal in the background. Nothing is lost or needs re-doing later:
+check their box whenever you're ready to include them, and the next
+automatic run picks up wherever they'd have been.
+
+To start a pilot: check the box for your chosen 5-10 people, then use the
+Sheet's **Task Tracker → Send welcome email...** menu to welcome exactly
+them right away (that manual path always ignores the Pilot flag — it's an
+explicit pick, not the automatic path). Everyone else's data stays exactly as
+it is, untouched, ready to switch on whenever you widen the rollout.
+
+If you're adding the Pilot column to a sheet that already existed before this
+feature, run `setupPilotCheckboxes()` once from the Apps Script editor so the
+column renders as real clickable checkboxes instead of blank/TRUE-FALSE text.
+
 ## One-time setup
 
 ### 1. Apps Script project

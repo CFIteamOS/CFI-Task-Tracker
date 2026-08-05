@@ -47,7 +47,11 @@ const TRACKER_HEADERS = [
   'TaskID', 'Owner', 'OwnerEmail', 'Comments', 'Task', 'Meeting', 'MoM Date', 'Status',
   'Revised Timeline Date', 'Reminder Count', 'Last Updated', 'Notified', 'SourceKey'
 ];
-const OWNERS_HEADERS = ['Name', 'Email', 'Token', 'WelcomeSent'];
+// Pilot: checkbox — while a pilot is running, notifyOwners/sendReminders
+// only ever email owners with this checked. Unchecked owners' tasks still
+// get filed by scanMoMEmails as normal, just silently, until they're
+// switched on (nothing to re-migrate or re-send when that happens).
+const OWNERS_HEADERS = ['Name', 'Email', 'Token', 'WelcomeSent', 'Pilot'];
 const UNMATCHED_HEADERS = ['Name Tag', 'Task', 'Meeting', 'MoM Date', 'Seen At'];
 const COMMENTS_HEADERS = ['TaskID', 'Author', 'Text', 'Timestamp', 'CommentID'];
 
@@ -99,6 +103,18 @@ function initializeSheets() {
   ensureSheet_(ss, OWNERS_SHEET, OWNERS_HEADERS);
   ensureSheet_(ss, UNMATCHED_SHEET, UNMATCHED_HEADERS);
   ensureSheet_(ss, COMMENTS_SHEET, COMMENTS_HEADERS);
+}
+
+// One-time helper for an already-live sheet that just picked up the Pilot
+// column: turns it into real clickable checkboxes instead of blank/TRUE-FALSE
+// text cells. Safe to run more than once. Run it once from the editor after
+// pulling in the Pilot column for the first time.
+function setupPilotCheckboxes() {
+  const ss = getSpreadsheet_();
+  const owners = ensureSheet_(ss, OWNERS_SHEET, OWNERS_HEADERS);
+  const pilotColIndex = OWNERS_HEADERS.indexOf('Pilot') + 1;
+  const rowCount = Math.max(owners.getLastRow() - 1, 200); // cover existing rows, plus headroom for new owners
+  owners.getRange(2, pilotColIndex, rowCount, 1).insertCheckboxes();
 }
 
 // Creates the sheet with the given headers if it doesn't exist. If it does
@@ -337,6 +353,7 @@ function notifyOwners() {
   const emailCol = OWNERS_HEADERS.indexOf('Email');
   const tokenCol = OWNERS_HEADERS.indexOf('Token');
   const welcomeCol = OWNERS_HEADERS.indexOf('WelcomeSent');
+  const pilotCol = OWNERS_HEADERS.indexOf('Pilot');
   const notifiedColIndex = col('Notified') + 1;
 
   // Backfill: anyone who has tasks on file but was never actually welcomed
@@ -359,6 +376,7 @@ function notifyOwners() {
   Object.keys(pendingByOwner).forEach(ownerName => {
     for (let i = 1; i < ownersData.length; i++) {
       if (ownersData[i][nameCol] !== ownerName) continue;
+      if (ownersData[i][pilotCol] !== true) break; // not in the pilot yet — leave their tasks queued for later
 
       const email = ownersData[i][emailCol];
       const token = ownersData[i][tokenCol];
@@ -534,11 +552,13 @@ function sendReminders() {
   const nameCol = OWNERS_HEADERS.indexOf('Name');
   const emailCol = OWNERS_HEADERS.indexOf('Email');
   const tokenCol = OWNERS_HEADERS.indexOf('Token');
+  const pilotCol = OWNERS_HEADERS.indexOf('Pilot');
   const reminderColIndex = col('Reminder Count') + 1;
 
   Object.keys(dueByOwner).forEach(ownerName => {
     for (let i = 1; i < ownersData.length; i++) {
       if (ownersData[i][nameCol] !== ownerName) continue;
+      if (ownersData[i][pilotCol] !== true) break; // not in the pilot yet — no reminder, no count bump
       const email = ownersData[i][emailCol];
       const token = ownersData[i][tokenCol];
       const link = `${baseUrl}?token=${token}`;
