@@ -327,6 +327,27 @@ function generateTaskId_(tracker) {
   return id;
 }
 
+// ---------- shared HTML email helpers ----------
+//
+// Plain-text emails have no hanging indent, so a long bullet that wraps onto
+// a second line looks like a new, unindented line rather than a continuation
+// of the same item. Sending an htmlBody alongside the plain-text body fixes
+// this (a real <ul><li> wraps with proper indent) while keeping the plain
+// text as a fallback for clients that don't render HTML.
+function escapeHtml_(str) {
+  return String(str == null ? '' : str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function buildItemsListHtml_(items, formatItem) {
+  const format = formatItem || (it => escapeHtml_(it.task));
+  return '<ul style="margin:8px 0 16px; padding-left:20px;">' +
+    items.map(it => `<li style="margin-bottom:6px;">${format(it)}</li>`).join('') +
+    '</ul>';
+}
+
 // ---------- step 2: notify owners (welcome, or a "new tasks" nudge) ----------
 
 function notifyOwners() {
@@ -392,7 +413,13 @@ function notifyOwners() {
           body: `Hi ${ownerName},\n\nYou've been tagged with action items from a recent meeting. ` +
             `Bookmark this link — it always shows your current, live checklist:\n\n${link}\n\n` +
             `New items right now:\n${items.map(it => `- ${it.task}`).join('\n')}\n\n` +
-            `Just tick things off (or mark them In Progress / Blocked / Revised Timeline) as you go.`
+            `Just tick things off (or mark them In Progress / Blocked / Revised Timeline) as you go.`,
+          htmlBody: `<p>Hi ${escapeHtml_(ownerName)},</p>` +
+            `<p>You've been tagged with action items from a recent meeting. ` +
+            `Bookmark this link — it always shows your current, live checklist:</p>` +
+            `<p><a href="${link}">${escapeHtml_(link)}</a></p>` +
+            `<p>New items right now:</p>${buildItemsListHtml_(items)}` +
+            `<p>Just tick things off (or mark them In Progress / Blocked / Revised Timeline) as you go.</p>`
         });
         owners.getRange(i + 1, welcomeCol + 1).setValue(true);
       } else {
@@ -404,7 +431,11 @@ function notifyOwners() {
           subject: 'New tasks have been added!',
           body: `Hi ${ownerName},\n\nNew tasks have been added!\n\n` +
             `${items.map(it => `- ${it.task}`).join('\n')}\n\n` +
-            `View your full checklist here:\n${link}`
+            `View your full checklist here:\n${link}`,
+          htmlBody: `<p>Hi ${escapeHtml_(ownerName)},</p>` +
+            `<p><strong>New tasks have been added!</strong></p>` +
+            buildItemsListHtml_(items) +
+            `<p>View your full checklist here: <a href="${link}">${escapeHtml_(link)}</a></p>`
         });
       }
 
@@ -495,7 +526,12 @@ function sendWelcomeCore_(ownerNames) {
         subject: 'Your action items checklist',
         body: `Hi ${ownerName},\n\nHere's your permanent link to your action items checklist:\n\n${link}\n\n` +
           (items.length ? `Current items:\n${items.map(it => `- ${it.task}`).join('\n')}\n\n` : '') +
-          `Just tick things off (or mark them In Progress / Blocked / Revised Timeline) as you go.`
+          `Just tick things off (or mark them In Progress / Blocked / Revised Timeline) as you go.`,
+        htmlBody: `<p>Hi ${escapeHtml_(ownerName)},</p>` +
+          `<p>Here's your permanent link to your action items checklist:</p>` +
+          `<p><a href="${link}">${escapeHtml_(link)}</a></p>` +
+          (items.length ? `<p>Current items:</p>${buildItemsListHtml_(items)}` : '') +
+          `<p>Just tick things off (or mark them In Progress / Blocked / Revised Timeline) as you go.</p>`
       });
 
       owners.getRange(i + 1, welcomeCol + 1).setValue(true);
@@ -569,7 +605,11 @@ function sendReminders() {
         subject: `Reminder: ${items.length} pending action item(s)`,
         body: `Hi ${ownerName},\n\nStill open on your checklist:\n\n` +
           `${items.map(it => `- ${it.task} (${it.status})`).join('\n')}\n\n` +
-          `Update your status here:\n${link}`
+          `Update your status here:\n${link}`,
+        htmlBody: `<p>Hi ${escapeHtml_(ownerName)},</p>` +
+          `<p>Still open on your checklist:</p>` +
+          buildItemsListHtml_(items, it => `${escapeHtml_(it.task)} (${escapeHtml_(it.status)})`) +
+          `<p>Update your status here: <a href="${link}">${escapeHtml_(link)}</a></p>`
       });
 
       items.forEach(it => {
