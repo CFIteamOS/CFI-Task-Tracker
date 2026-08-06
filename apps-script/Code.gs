@@ -105,6 +105,41 @@ function initializeSheets() {
   ensureSheet_(ss, COMMENTS_SHEET, COMMENTS_HEADERS);
 }
 
+// One-time setup — run this once from the editor to put scanMoMEmails,
+// notifyOwners, and sendReminders on a real recurring schedule, instead of
+// only running when you click Run yourself. Safe to run more than once:
+// skips creating a trigger for a function that already has one, so it won't
+// pile up duplicates.
+function setupAutomationTriggers() {
+  const existingHandlers = new Set(ScriptApp.getProjectTriggers().map(t => t.getHandlerFunction()));
+  const created = [];
+  const skipped = [];
+
+  if (existingHandlers.has('scanMoMEmails')) {
+    skipped.push('scanMoMEmails');
+  } else {
+    ScriptApp.newTrigger('scanMoMEmails').timeBased().everyHours(1).create();
+    created.push('scanMoMEmails (every hour)');
+  }
+
+  if (existingHandlers.has('notifyOwners')) {
+    skipped.push('notifyOwners');
+  } else {
+    ScriptApp.newTrigger('notifyOwners').timeBased().everyHours(1).create();
+    created.push('notifyOwners (every hour)');
+  }
+
+  if (existingHandlers.has('sendReminders')) {
+    skipped.push('sendReminders');
+  } else {
+    ScriptApp.newTrigger('sendReminders').timeBased().everyDays(7).atHour(9).create();
+    created.push('sendReminders (every 7 days, ~9am)');
+  }
+
+  Logger.log(`Created: ${created.join(', ') || '(none)'}`);
+  Logger.log(`Already had a trigger, left alone: ${skipped.join(', ') || '(none)'}`);
+}
+
 // One-time helper for an already-live sheet that just picked up the Pilot
 // column: turns it into real clickable checkboxes instead of blank/TRUE-FALSE
 // text cells. Safe to run more than once. Run it once from the editor after
