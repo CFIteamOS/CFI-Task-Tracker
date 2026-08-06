@@ -322,3 +322,5 @@ document.getElementById('table').addEventListener('click', async (e) => {
     await loadDashboard(adminPassword);
   }
 });
+
+initThemeToggle('themeToggle');

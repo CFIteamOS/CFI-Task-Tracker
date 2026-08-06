@@ -299,4 +299,5 @@ async function init() {
   });
 }
 
+initThemeToggle('themeToggle');
 init();

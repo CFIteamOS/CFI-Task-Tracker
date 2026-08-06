@@ -36,6 +36,59 @@
   }
 }
 
+/* Explicit theme override — wins over the OS preference above whenever the
+   toggle button has set data-theme on <html>. No attribute = follow the OS. */
+:root[data-theme="light"] {
+  --bg: #f8f9fc;
+  --card: #ffffff;
+  --text: #16181d;
+  --muted: #6b7280;
+  --border: #e8eaf0;
+  --accent: #10286b;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 2px 6px rgba(16, 24, 40, 0.06);
+  --shadow-hover: 0 2px 4px rgba(16, 24, 40, 0.06), 0 6px 16px rgba(16, 24, 40, 0.1);
+  --new-bg: #eaf1ff;
+  --new-border: #3b6fd6;
+  --new-badge-bg: #3b6fd6;
+  --new-badge-text: #ffffff;
+}
+
+:root[data-theme="dark"] {
+  --bg: #14151a;
+  --card: #1e1f25;
+  --text: #eaeaea;
+  --muted: #9ca3af;
+  --border: #2f3038;
+  --accent: #6784ff;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.35), 0 8px 20px rgba(0, 0, 0, 0.45);
+  --new-bg: rgba(59, 111, 214, 0.18);
+  --new-border: #7ea1e8;
+  --new-badge-bg: #7ea1e8;
+  --new-badge-text: #0b1330;
+}
+
+.theme-toggle {
+  margin-left: auto;
+  background: rgba(255, 255, 255, 0.12);
+  border: none;
+  color: #fff;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.theme-toggle:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
 * { box-sizing: border-box; }
 
 body {
