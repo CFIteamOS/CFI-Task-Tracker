@@ -211,3 +211,4 @@ system has already picked up on its own.
   preflight requests, which Apps Script Web Apps can't handle (no `doOptions`).
 - Concurrent checklist updates are serialized with `LockService` to avoid two
   people's edits clobbering each other in the Sheet.
+
