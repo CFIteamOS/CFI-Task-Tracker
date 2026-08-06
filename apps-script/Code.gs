@@ -452,24 +452,27 @@ function parseActionsSection_(body) {
 function resolveOwner_(ss, nameTag) {
   const owners = ensureSheet_(ss, OWNERS_SHEET, OWNERS_HEADERS);
   const data = owners.getDataRange().getValues();
+  const nameCol = OWNERS_HEADERS.indexOf('Name');
+  const emailCol = OWNERS_HEADERS.indexOf('Email');
+  const tokenCol = OWNERS_HEADERS.indexOf('Token');
   // Some MoMs tag people by raw email address instead of name (e.g. an
   // external contact like "@venkanna@milletexpress.in") — match against the
   // Owners' Email column too in that case, not just the Name column.
   const looksLikeEmail = nameTag.indexOf('@') !== -1;
 
   for (let i = 1; i < data.length; i++) {
-    const name = String(data[i][0] || '');
-    const email = String(data[i][1] || '');
+    const name = String(data[i][nameCol] || '');
+    const email = String(data[i][emailCol] || '');
     const matchesByName = name.toLowerCase() === nameTag.toLowerCase() ||
       name.toLowerCase().startsWith(nameTag.toLowerCase());
     const matchesByEmail = looksLikeEmail && email.toLowerCase() === nameTag.toLowerCase();
     if (!matchesByName && !matchesByEmail) continue;
 
     if (!email) return null;
-    let token = data[i][2];
+    let token = data[i][tokenCol];
     if (!token) {
       token = Utilities.getUuid();
-      owners.getRange(i + 1, 3).setValue(token);
+      owners.getRange(i + 1, tokenCol + 1).setValue(token);
     }
     return { name, email, token };
   }
