@@ -219,10 +219,20 @@ function renderTask(task, token, onChange) {
 
 async function init() {
   const params = new URLSearchParams(window.location.search);
-  const token = params.get('token');
   const content = document.getElementById('content');
   const subtitle = document.getElementById('subtitle');
   const ownTaskForm = document.getElementById('ownTaskForm');
+
+  // A Home Screen icon (Android/iOS "Add to Home Screen") always relaunches
+  // the app's static start URL, which has no token in it — so remember the
+  // last-used token here and fall back to it whenever the URL is missing one.
+  const TOKEN_KEY = 'taskTrackerToken';
+  let token = params.get('token');
+  if (token) {
+    localStorage.setItem(TOKEN_KEY, token);
+  } else {
+    token = localStorage.getItem(TOKEN_KEY);
+  }
 
   if (!token) {
     subtitle.textContent = '';
