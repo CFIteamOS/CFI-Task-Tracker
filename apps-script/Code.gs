@@ -567,7 +567,11 @@ function notifyOwners() {
       if (ownersData[i][pilotCol] !== true) break; // not in the pilot yet — leave their tasks queued for later
 
       const email = ownersData[i][emailCol];
-      const token = ownersData[i][tokenCol];
+      let token = ownersData[i][tokenCol];
+      if (!token) {
+        token = Utilities.getUuid();
+        owners.getRange(i + 1, tokenCol + 1).setValue(token);
+      }
       const welcomeSent = ownersData[i][welcomeCol];
       const link = `${baseUrl}?token=${token}`;
       const items = pendingByOwner[ownerName];
@@ -679,7 +683,11 @@ function sendWelcomeCore_(ownerNames) {
       if (ownersData[i][nameCol] !== ownerName) continue;
 
       const email = ownersData[i][emailCol];
-      const token = ownersData[i][tokenCol];
+      let token = ownersData[i][tokenCol];
+      if (!token) {
+        token = Utilities.getUuid();
+        owners.getRange(i + 1, tokenCol + 1).setValue(token);
+      }
       const link = `${baseUrl}?token=${token}`;
       const items = [];
       for (let r = 1; r < trackerData.length; r++) {
@@ -763,7 +771,11 @@ function sendReminders() {
       if (ownersData[i][nameCol] !== ownerName) continue;
       if (ownersData[i][pilotCol] !== true) break; // not in the pilot yet — no reminder, no count bump
       const email = ownersData[i][emailCol];
-      const token = ownersData[i][tokenCol];
+      let token = ownersData[i][tokenCol];
+      if (!token) {
+        token = Utilities.getUuid();
+        owners.getRange(i + 1, tokenCol + 1).setValue(token);
+      }
       const link = `${baseUrl}?token=${token}`;
       const items = dueByOwner[ownerName];
 
