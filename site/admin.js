@@ -4,13 +4,6 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-function formatDate(value) {
-  if (!value) return '';
-  const d = new Date(value);
-  if (isNaN(d)) return '';
-  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-}
-
 function badgeClass(status) {
   return 'badge ' + status.replace(/\s+/g, '-');
 }
@@ -23,12 +16,51 @@ function statusRank(status) {
   return 0;
 }
 
+// Different MoMs tag the same brand inconsistently (SB vs Sharief Bhai, FB
+// vs Frozen Bottle, etc.) - this folds known aliases into one canonical
+// bucket for the brand summary/filter. Anything not listed here keeps its
+// own bracket tag as-is.
+const BRAND_ALIASES = {
+  'sb': 'Sharief Bhai',
+  'sharief bhai': 'Sharief Bhai',
+  'fb': 'Frozen Bottle',
+  'frozen bottle': 'Frozen Bottle',
+  'b2b+cpg': 'B2B+CPG',
+  'b2b': 'B2B+CPG',
+  'arambam': 'Arambam',
+  'me': 'Arambam',
+  'mcrc': 'Arambam',
+  'all 3': 'Arambam',
+  'general': 'General',
+  'other': 'General',
+  'inventory': 'General'
+};
+
+function normalizeBrand(raw) {
+  const key = raw.trim().toLowerCase();
+  return BRAND_ALIASES[key] || raw.trim();
+}
+
 // Tasks are written as "[FB] Do the thing" - the leading bracket tag is the
 // brand, kept inline in the task text rather than a separate column (see
-// README). Anything without one is grouped under "Other".
+// README). Anything without one is grouped under "General" (see aliases).
 function extractBrand(taskText) {
   const m = /^\[([^\]]+)\]/.exec(taskText || '');
-  return m ? m[1] : 'Other';
+  return normalizeBrand(m ? m[1] : 'Other');
+}
+
+// The admin can assign one task to several owners at once, which creates a
+// separate Tracker row (and TaskID) per owner. This groups those rows back
+// together for display, keyed on the fields that were identical at
+// creation time, so they show as one row with owners joined together.
+function groupTasks(tasks) {
+  const map = new Map();
+  tasks.forEach(t => {
+    const key = `${t.task}||${t.meeting}||${t.momDate}`;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(t);
+  });
+  return Array.from(map.values());
 }
 
 function formatRelativeTime(value) {
@@ -60,7 +92,6 @@ function isNewComment(task) {
 
 let allTasks = [];
 let ownerNames = [];
-let currentFilter = 'all';
 let currentBrand = 'all';
 let adminPassword = null;
 let editingTaskId = null;
@@ -159,20 +190,11 @@ function render() {
 
   const newCount = allTasks.filter(isNewComment).length;
   const banner = document.getElementById('newCommentsBanner');
-  const newCommentsBtn = document.getElementById('newCommentsFilterBtn');
   if (newCount) {
     banner.style.display = 'flex';
     banner.textContent = `${newCount} task${newCount > 1 ? 's have' : ' has'} new comments since your last visit`;
-    newCommentsBtn.style.display = 'inline-block';
-    newCommentsBtn.textContent = `New comments (${newCount})`;
   } else {
     banner.style.display = 'none';
-    newCommentsBtn.style.display = 'none';
-    if (currentFilter === 'newComments') {
-      currentFilter = 'all';
-      document.querySelectorAll('.filters button').forEach(b => b.classList.remove('active'));
-      document.querySelector('.filters button[data-filter="all"]').classList.add('active');
-    }
   }
 
   // Pending-by-brand summary: counts tasks not yet Done, grouped by the
@@ -196,9 +218,6 @@ function render() {
   `;
 
   let filtered = allTasks;
-  if (currentFilter === 'open') filtered = allTasks.filter(t => t.status !== 'Done');
-  else if (currentFilter === 'newComments') filtered = allTasks.filter(isNewComment);
-  else if (currentFilter !== 'all') filtered = allTasks.filter(t => t.status === currentFilter);
   if (currentBrand !== 'all') filtered = filtered.filter(t => extractBrand(t.task) === currentBrand);
 
   const table = document.getElementById('table');
@@ -207,25 +226,36 @@ function render() {
     return;
   }
 
-  const rows = filtered
-    .sort((a, b) => statusRank(a.status) - statusRank(b.status))
-    .map(t => {
-      const isNew = isNewComment(t);
-      const commentCell = t.lastCommentAt
+  const groups = groupTasks(filtered);
+
+  const rows = groups
+    .sort((a, b) => statusRank(a[0].status) - statusRank(b[0].status))
+    .map(group => {
+      const ids = group.map(t => t.id);
+      const owners = group.map(t => t.owner).join(', ');
+      const sameStatus = group.every(t => t.status === group[0].status);
+      const statusCell = sameStatus
+        ? `<span class="${badgeClass(group[0].status)}">${group[0].status}</span>`
+        : group.map(t => `<div><span class="${badgeClass(t.status)}">${t.status}</span> <span style="color:var(--muted); font-size:0.78rem;">${escapeHtml(t.owner)}</span></div>`).join('');
+
+      const anyNew = group.some(isNewComment);
+      const latest = group.reduce((a, b) =>
+        (!a.lastCommentAt || (b.lastCommentAt && new Date(b.lastCommentAt) > new Date(a.lastCommentAt))) ? b : a, group[0]);
+      const commentCell = latest.lastCommentAt
         ? `
           <div class="comment-cell-meta">
-            ${isNew ? '<span class="badge-new">New</span>' : ''}
-            <span class="comment-cell-time">${formatRelativeTime(t.lastCommentAt)}</span>
+            ${isNewComment(latest) ? '<span class="badge-new">New</span>' : ''}
+            <span class="comment-cell-time">${formatRelativeTime(latest.lastCommentAt)}</span>
           </div>
-          <div class="comment-cell-text">${escapeHtml(t.lastCommentText)}</div>
+          <div class="comment-cell-text">${escapeHtml(latest.lastCommentText)}</div>
         `
         : '';
+
       return `
-      <tr data-id="${escapeHtml(t.id)}" class="${isNew ? 'row-new' : ''}">
-        <td data-label="Owner">${escapeHtml(t.owner)}</td>
-        <td data-label="Task">${escapeHtml(t.task)}</td>
-        <td data-label="Status"><span class="${badgeClass(t.status)}">${t.status}</span></td>
-        <td data-label="Revised to">${formatDate(t.revisedTimelineDate)}</td>
+      <tr data-ids="${escapeHtml(ids.join(','))}" class="${anyNew ? 'row-new' : ''}">
+        <td data-label="Task">${escapeHtml(group[0].task)}</td>
+        <td data-label="Owner">${escapeHtml(owners)}</td>
+        <td data-label="Status">${statusCell}</td>
         <td data-label="Comments">${commentCell}</td>
         <td data-label="Actions">
           <div class="row-actions">
@@ -240,7 +270,7 @@ function render() {
   table.innerHTML = `
     <table>
       <thead>
-        <tr><th>Owner</th><th>Task</th><th>Status</th><th>Revised to</th><th>Comments</th><th>Actions</th></tr>
+        <tr><th>Task</th><th>Owner</th><th>Status</th><th>Comments</th><th>Actions</th></tr>
       </thead>
       <tbody>${rows}</tbody>
     </table>
@@ -283,15 +313,6 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
 
 document.getElementById('password').addEventListener('keydown', e => {
   if (e.key === 'Enter') document.getElementById('loginBtn').click();
-});
-
-document.querySelectorAll('.filters button').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.filters button').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    currentFilter = btn.dataset.filter;
-    render();
-  });
 });
 
 // Brand pills are rebuilt on every render(), so this listens on the
@@ -348,16 +369,24 @@ document.getElementById('assignBtn').addEventListener('click', async () => {
 document.getElementById('table').addEventListener('click', async (e) => {
   const btn = e.target.closest('button[data-action]');
   if (!btn) return;
-  const row = btn.closest('tr[data-id]');
-  const taskId = row.dataset.id;
-  const task = allTasks.find(t => t.id === taskId);
+  const row = btn.closest('tr[data-ids]');
+  const ids = row.dataset.ids.split(',');
+  const group = ids.map(id => allTasks.find(t => t.id === id)).filter(Boolean);
+  if (!group.length) return;
 
   if (btn.dataset.action === 'edit') {
-    startEdit(task);
+    // A multi-owner group edits as the first owner's copy - editing is
+    // restricted to a single owner anyway (see startEdit/populateOwnerPicker).
+    startEdit(group[0]);
   } else if (btn.dataset.action === 'delete') {
-    if (!confirm(`Delete "${task.task}"? This can't be undone.`)) return;
-    const data = await postAction({ action: 'deleteTask', password: adminPassword, id: taskId });
-    if (data.error) { alert(data.error); return; }
+    const label = group.length > 1
+      ? `"${group[0].task}" for ${group.map(t => t.owner).join(', ')}`
+      : `"${group[0].task}"`;
+    if (!confirm(`Delete ${label}? This can't be undone.`)) return;
+    for (const id of ids) {
+      const data = await postAction({ action: 'deleteTask', password: adminPassword, id });
+      if (data.error) { alert(data.error); return; }
+    }
     await loadDashboard(adminPassword);
   }
 });
