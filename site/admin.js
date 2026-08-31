@@ -23,6 +23,14 @@ function statusRank(status) {
   return 0;
 }
 
+// Tasks are written as "[FB] Do the thing" - the leading bracket tag is the
+// brand, kept inline in the task text rather than a separate column (see
+// README). Anything without one is grouped under "Other".
+function extractBrand(taskText) {
+  const m = /^\[([^\]]+)\]/.exec(taskText || '');
+  return m ? m[1] : 'Other';
+}
+
 function formatRelativeTime(value) {
   if (!value) return '';
   const d = new Date(value);
@@ -53,6 +61,7 @@ function isNewComment(task) {
 let allTasks = [];
 let ownerNames = [];
 let currentFilter = 'all';
+let currentBrand = 'all';
 let adminPassword = null;
 let editingTaskId = null;
 
@@ -166,10 +175,31 @@ function render() {
     }
   }
 
+  // Pending-by-brand summary: counts tasks not yet Done, grouped by the
+  // leading [Bracket] tag in the task text. Each pill also sets the brand
+  // filter when clicked.
+  const pendingByBrand = {};
+  allTasks.forEach(t => {
+    if (t.status === 'Done') return;
+    const brand = extractBrand(t.task);
+    pendingByBrand[brand] = (pendingByBrand[brand] || 0) + 1;
+  });
+  const brandBar = document.getElementById('brandBar');
+  const brands = Object.keys(pendingByBrand).sort((a, b) => pendingByBrand[b] - pendingByBrand[a]);
+  brandBar.innerHTML = `
+    <button class="brand-pill ${currentBrand === 'all' ? 'active' : ''}" data-brand="all">All brands</button>
+    ${brands.map(b => `
+      <button class="brand-pill ${currentBrand === b ? 'active' : ''}" data-brand="${escapeHtml(b)}">
+        ${escapeHtml(b)} (${pendingByBrand[b]})
+      </button>
+    `).join('')}
+  `;
+
   let filtered = allTasks;
   if (currentFilter === 'open') filtered = allTasks.filter(t => t.status !== 'Done');
   else if (currentFilter === 'newComments') filtered = allTasks.filter(isNewComment);
   else if (currentFilter !== 'all') filtered = allTasks.filter(t => t.status === currentFilter);
+  if (currentBrand !== 'all') filtered = filtered.filter(t => extractBrand(t.task) === currentBrand);
 
   const table = document.getElementById('table');
   if (!filtered.length) {
@@ -262,6 +292,15 @@ document.querySelectorAll('.filters button').forEach(btn => {
     currentFilter = btn.dataset.filter;
     render();
   });
+});
+
+// Brand pills are rebuilt on every render(), so this listens on the
+// container rather than on buttons that get thrown away each time.
+document.getElementById('brandBar').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-brand]');
+  if (!btn) return;
+  currentBrand = btn.dataset.brand;
+  render();
 });
 
 document.getElementById('cancelEditBtn').addEventListener('click', stopEdit);
