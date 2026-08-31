@@ -63,8 +63,8 @@ const COMMENTS_HEADERS = ['TaskID', 'Author', 'Text', 'Timestamp', 'CommentID'];
 // in the function dropdown, and click Run once.
 
 function setup() {
-  setSpreadsheetId('1ICqfy3hvX4yVeppcpTare6zz2QmaBE9pZ-1jZBICzb8');
-  setAdminPassword('Curefoods11');
+  setSpreadsheetId('PASTE_YOUR_SHEET_ID_HERE');
+  setAdminPassword('PASTE_YOUR_ADMIN_PASSWORD_HERE');
   setMomSender('PASTE_THE_MOM_SENDER_EMAIL_HERE');
   initializeSheets();
 }
@@ -630,7 +630,26 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Task Tracker')
     .addItem('Send welcome email...', 'showWelcomeDialog')
+    .addItem('Change admin password...', 'changeAdminPassword')
     .addToUi();
+}
+
+// Lets you rotate the admin password without ever typing it into a file -
+// this prompt runs entirely inside the Sheet, and the value is written
+// straight to Script Properties, never to source code.
+function changeAdminPassword() {
+  const ui = SpreadsheetApp.getUi();
+  const response = ui.prompt('Change admin password', 'Enter the new admin password:', ui.ButtonSet.OK_CANCEL);
+  if (response.getSelectedButton() !== ui.Button.OK) return;
+
+  const newPassword = response.getResponseText().trim();
+  if (!newPassword) {
+    ui.alert('Password cannot be empty - nothing changed.');
+    return;
+  }
+
+  setAdminPassword(newPassword);
+  ui.alert('Admin password updated.');
 }
 
 function showWelcomeDialog() {
