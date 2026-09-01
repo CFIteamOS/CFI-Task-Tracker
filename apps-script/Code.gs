@@ -614,6 +614,37 @@ function notifyOwners() {
       break;
     }
   });
+
+  // Anyone in the pilot with no tasks on file at all never shows up in
+  // pendingByOwner above, so they'd otherwise never get welcomed. Send them
+  // a lighter welcome with no checklist yet, just their link for later.
+  for (let i = 1; i < ownersData.length; i++) {
+    const name = ownersData[i][nameCol];
+    if (!name || ownersData[i][welcomeCol] || ownersData[i][pilotCol] !== true) continue;
+    if (pendingByOwner[name]) continue; // handled above already
+
+    const email = ownersData[i][emailCol];
+    let token = ownersData[i][tokenCol];
+    if (!token) {
+      token = Utilities.getUuid();
+      owners.getRange(i + 1, tokenCol + 1).setValue(token);
+    }
+    const link = `${baseUrl}?token=${token}`;
+
+    MailApp.sendEmail({
+      to: email,
+      subject: 'Your action items checklist',
+      body: `Hi ${name},\n\nYou're now on the MoM action item tracker. ` +
+        `Bookmark this link — it'll always show your current, live checklist:\n\n${link}\n\n` +
+        `Nothing's assigned to you yet — whenever you're tagged in a meeting's action items, it'll show up here automatically.`,
+      htmlBody: `<p>Hi ${escapeHtml_(name)},</p>` +
+        `<p>You're now on the MoM action item tracker. ` +
+        `Bookmark this link — it'll always show your current, live checklist:</p>` +
+        `<p><a href="${link}">${escapeHtml_(link)}</a></p>` +
+        `<p>Nothing's assigned to you yet — whenever you're tagged in a meeting's action items, it'll show up here automatically.</p>`
+    });
+    owners.getRange(i + 1, welcomeCol + 1).setValue(true);
+  }
 }
 
 // ---------- sheet menu: manually (re)send a welcome email to chosen owners ----------
