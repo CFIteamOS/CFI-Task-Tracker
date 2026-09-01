@@ -83,7 +83,7 @@ function setMomSender(email) {
 
 function getMomSearchQuery_() {
   const sender = PropertiesService.getScriptProperties().getProperty('MOM_SENDER');
-  return sender ? `from:(${sender}) subject:MoM newer_than:2d` : 'in:sent subject:MoM newer_than:2d';
+  return sender ? `from:(${sender}) subject:MoM newer_than:16d` : 'in:sent subject:MoM newer_than:16d';
 }
 
 function getSpreadsheet_() {

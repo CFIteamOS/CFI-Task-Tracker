@@ -546,6 +546,18 @@ th {
   padding: 6px;
 }
 
+.owner-picker-search {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 6px;
+  padding: 8px;
+  font: inherit;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: inherit;
+}
+
 .owner-picker-item {
   display: flex;
   align-items: center;

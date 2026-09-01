@@ -137,6 +137,7 @@ function populateOwnerPicker() {
   picker.innerHTML = `
     <summary id="ownerPickerSummary">Select owner(s)</summary>
     <div class="owner-picker-list">
+      <input type="text" id="ownerPickerSearch" class="owner-picker-search" placeholder="Type a name...">
       ${ownerNames.map(n => `
         <label class="owner-picker-item">
           <input type="checkbox" value="${escapeHtml(n)}"> ${escapeHtml(n)}
@@ -156,6 +157,16 @@ function populateOwnerPicker() {
         });
       }
       updateOwnerPickerSummary();
+    });
+  });
+
+  const search = document.getElementById('ownerPickerSearch');
+  search.addEventListener('click', e => e.stopPropagation());
+  search.addEventListener('input', () => {
+    const q = search.value.trim().toLowerCase();
+    picker.querySelectorAll('.owner-picker-item').forEach(item => {
+      const name = item.textContent.trim().toLowerCase();
+      item.style.display = !q || name.includes(q) ? '' : 'none';
     });
   });
 }
