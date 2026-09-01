@@ -630,8 +630,30 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Task Tracker')
     .addItem('Send welcome email...', 'showWelcomeDialog')
+    .addItem('Generate missing tokens', 'generateMissingTokens')
     .addItem('Change admin password...', 'changeAdminPassword')
     .addToUi();
+}
+
+// Fills in a Token for every Owners row that doesn't have one yet, without
+// sending any email - lets a token/checklist link exist ahead of the
+// automated welcome email (e.g. to share the link manually first).
+function generateMissingTokens() {
+  const ss = getSpreadsheet_();
+  const owners = ensureSheet_(ss, OWNERS_SHEET, OWNERS_HEADERS);
+  const data = owners.getDataRange().getValues();
+  const tokenCol = OWNERS_HEADERS.indexOf('Token');
+  const nameCol = OWNERS_HEADERS.indexOf('Name');
+
+  let count = 0;
+  for (let i = 1; i < data.length; i++) {
+    if (!String(data[i][nameCol] || '').trim()) continue;
+    if (data[i][tokenCol]) continue;
+    owners.getRange(i + 1, tokenCol + 1).setValue(Utilities.getUuid());
+    count++;
+  }
+
+  SpreadsheetApp.getUi().alert(count ? `Generated ${count} token(s).` : 'Everyone already has a token.');
 }
 
 // Lets you rotate the admin password without ever typing it into a file -
