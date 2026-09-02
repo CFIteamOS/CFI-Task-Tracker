@@ -95,6 +95,7 @@ let ownerNames = [];
 let currentBrand = 'all';
 let adminPassword = null;
 let editingTaskId = null;
+let onlyNewComments = false;
 
 async function postAction(body) {
   const res = await fetch(API_URL, {
@@ -203,9 +204,17 @@ function render() {
   const banner = document.getElementById('newCommentsBanner');
   if (newCount) {
     banner.style.display = 'flex';
-    banner.textContent = `${newCount} task${newCount > 1 ? 's have' : ' has'} new comments since your last visit`;
+    banner.style.cursor = 'pointer';
+    banner.textContent = onlyNewComments
+      ? `Showing only tasks with new comments — click to show all`
+      : `${newCount} task${newCount > 1 ? 's have' : ' has'} new comments since your last visit — click to filter`;
+    banner.onclick = () => {
+      onlyNewComments = !onlyNewComments;
+      render();
+    };
   } else {
     banner.style.display = 'none';
+    onlyNewComments = false;
   }
 
   // Pending-by-brand summary: counts tasks not yet Done, grouped by the
@@ -230,6 +239,7 @@ function render() {
 
   let filtered = allTasks;
   if (currentBrand !== 'all') filtered = filtered.filter(t => extractBrand(t.task) === currentBrand);
+  if (onlyNewComments) filtered = filtered.filter(isNewComment);
 
   const table = document.getElementById('table');
   if (!filtered.length) {
