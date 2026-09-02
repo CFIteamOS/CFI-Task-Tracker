@@ -649,11 +649,11 @@ tr.row-new td:first-child {
 
   table td {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 12px;
-    text-align: right;
-    padding: 4px 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    text-align: left;
+    padding: 8px 0;
     border-bottom: none;
   }
 
@@ -662,11 +662,10 @@ tr.row-new td:first-child {
     font-weight: 600;
     font-size: 0.78rem;
     color: var(--muted);
-    text-align: left;
-    flex-shrink: 0;
   }
 
   table td .row-actions {
-    justify-content: flex-end;
+    flex-direction: row;
+    justify-content: flex-start;
   }
 }
