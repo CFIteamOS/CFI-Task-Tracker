@@ -668,4 +668,27 @@ tr.row-new td:first-child {
     flex-direction: row;
     justify-content: flex-start;
   }
+
+  /* Task and Comments keep the stacked label-above-value treatment (they
+     need the room); Owner and Status are short enough to sit inline with
+     their label instead, and Status doesn't need a label at all since the
+     colored badge already says what it is. */
+  table td[data-label="Task"] {
+    font-weight: 600;
+  }
+
+  table td[data-label="Owner"] {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+  }
+
+  table td[data-label="Status"] {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  table td[data-label="Status"]::before {
+    display: none;
+  }
 }
