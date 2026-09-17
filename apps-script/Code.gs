@@ -511,7 +511,8 @@ function escapeHtml_(str) {
 function buildItemsListHtml_(items, formatItem) {
   const format = formatItem || (it => escapeHtml_(it.task));
   return '<ul style="margin:8px 0 16px; padding-left:20px;">' +
-    items.map(it => `<li style="margin-bottom:6px;">${format(it)}</li>`).join('') +
+    items.map(it => `<li style="margin-bottom:6px;">${format(it)}${it.meeting ?
+      `<div style="font-style:italic; color:#666; font-size:0.85em;">${escapeHtml_(it.meeting)}</div>` : ''}</li>`).join('') +
     '</ul>';
 }
 
@@ -533,7 +534,7 @@ function notifyOwners() {
     if (new Date(trackerData[i][col('MoM Date')]) > notifyCutoff) continue; // not old enough yet, catch it on a later run
     const owner = trackerData[i][col('Owner')];
     if (!pendingByOwner[owner]) pendingByOwner[owner] = [];
-    pendingByOwner[owner].push({ row: i + 1, task: trackerData[i][col('Task')] });
+    pendingByOwner[owner].push({ row: i + 1, task: trackerData[i][col('Task')], meeting: trackerData[i][col('Meeting')] });
   }
 
   const ownersData = owners.getDataRange().getValues();
@@ -555,7 +556,7 @@ function notifyOwners() {
     const theirTasks = [];
     for (let r = 1; r < trackerData.length; r++) {
       if (trackerData[r][col('Owner')] === name) {
-        theirTasks.push({ row: r + 1, task: trackerData[r][col('Task')] });
+        theirTasks.push({ row: r + 1, task: trackerData[r][col('Task')], meeting: trackerData[r][col('Meeting')] });
       }
     }
     if (theirTasks.length) pendingByOwner[name] = theirTasks;
@@ -583,7 +584,7 @@ function notifyOwners() {
           subject: 'Your action items checklist',
           body: `Hi ${ownerName},\n\nYou've been tagged with action items from a recent meeting. ` +
             `Bookmark this link — it always shows your current, live checklist:\n\n${link}\n\n` +
-            `New items right now:\n${items.map(it => `- ${it.task}`).join('\n')}\n\n` +
+            `New items right now:\n${items.map(it => `- ${it.task}${it.meeting ? ` (${it.meeting})` : ''}`).join('\n')}\n\n` +
             `Just tick things off (or mark them In Progress / Blocked / Revised Timeline) as you go.`,
           htmlBody: `<p>Hi ${escapeHtml_(ownerName)},</p>` +
             `<p>You've been tagged with action items from a recent meeting. ` +
@@ -601,7 +602,7 @@ function notifyOwners() {
           to: email,
           subject: 'New tasks have been added!',
           body: `Hi ${ownerName},\n\nNew tasks have been added!\n\n` +
-            `${items.map(it => `- ${it.task}`).join('\n')}\n\n` +
+            `${items.map(it => `- ${it.task}${it.meeting ? ` (${it.meeting})` : ''}`).join('\n')}\n\n` +
             `View your full checklist here:\n${link}`,
           htmlBody: `<p>Hi ${escapeHtml_(ownerName)},</p>` +
             `<p><strong>New tasks have been added!</strong></p>` +
@@ -828,7 +829,7 @@ function sendReminders() {
 
     const owner = data[i][col('Owner')];
     if (!dueByOwner[owner]) dueByOwner[owner] = [];
-    dueByOwner[owner].push({ row: i + 1, task: data[i][col('Task')], status });
+    dueByOwner[owner].push({ row: i + 1, task: data[i][col('Task')], status, meeting: data[i][col('Meeting')] });
   }
 
   const ownersData = owners.getDataRange().getValues();
@@ -855,7 +856,7 @@ function sendReminders() {
         to: email,
         subject: `Reminder: ${items.length} pending action item(s)`,
         body: `Hi ${ownerName},\n\nStill open on your checklist:\n\n` +
-          `${items.map(it => `- ${it.task} (${it.status})`).join('\n')}\n\n` +
+          `${items.map(it => `- ${it.task} (${it.status})${it.meeting ? ` [${it.meeting}]` : ''}`).join('\n')}\n\n` +
           `Update your status here:\n${link}`,
         htmlBody: `<p>Hi ${escapeHtml_(ownerName)},</p>` +
           `<p>Still open on your checklist:</p>` +
