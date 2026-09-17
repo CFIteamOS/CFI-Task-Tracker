@@ -582,12 +582,12 @@ function notifyOwners() {
         MailApp.sendEmail({
           to: email,
           subject: 'Your action items checklist',
-          body: `Hi ${ownerName},\n\nYou've been tagged with action items from a recent meeting. ` +
+          body: `Hi ${ownerName},\n\nYou've been recently tagged with some action items! ` +
             `Bookmark this link — it always shows your current, live checklist:\n\n${link}\n\n` +
             `New items right now:\n${items.map(it => `- ${it.task}${it.meeting ? ` (${it.meeting})` : ''}`).join('\n')}\n\n` +
             `Just tick things off (or mark them In Progress / Blocked / Revised Timeline) as you go.`,
           htmlBody: `<p>Hi ${escapeHtml_(ownerName)},</p>` +
-            `<p>You've been tagged with action items from a recent meeting. ` +
+            `<p>You've been recently tagged with some action items! ` +
             `Bookmark this link — it always shows your current, live checklist:</p>` +
             `<p><a href="${link}">${escapeHtml_(link)}</a></p>` +
             `<p>New items right now:</p>${buildItemsListHtml_(items)}` +
