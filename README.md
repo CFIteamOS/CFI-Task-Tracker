@@ -155,27 +155,9 @@ on a container binding.
    Sheet or the public repo). Authorize the requested Gmail/Sheets scopes when
    prompted.
 4. Open the **Owners** sheet and pre-fill `Name` + `Email` for everyone you
-   might tag with `@Name` in a MoM (and tick **Pilot** while a pilot is
-   running — people without it are filed tasks but never emailed).
-
-   **When a tag matches nobody.** `scanMoMEmails` never guesses: the task goes
-   to the `Unmatched` sheet (once — the same item is not re-logged on later
-   scans) and you get an email naming the tag, so a missing person is noticed
-   the day it happens instead of whenever someone checks the sheet. To fix it:
-   - **Not in Owners** — add them (Name, Email, Pilot ticked).
-   - **Already there under a longer name** — usually nothing to do: an
-     abbreviated tag like `@Divya G` is matched to `Divya Vijay Kumar
-     Gajbhiye` as long as it fits exactly one person. If it fits several, or
-     is a nickname, put the spelling used in the MoM under the `Aliases`
-     column (comma-separated).
-
-   Then the stuck tasks are filed automatically on the next scan — including
-   ones from a MoM too old for the scan to read again — or immediately via
-   **Task Tracker → Retry unmatched tasks** in the Sheet menu, which also
-   reports anyone still unresolved. Filed tasks start unnotified, so the owner
-   gets their welcome / "New tasks have been added!" email on the next
-   `notifyOwners` run. A task already in the Tracker for the same person,
-   meeting and day is never filed twice.
+   might tag with `@Name` in a MoM. If `scanMoMEmails` sees a tag it can't
+   match to a name here, it logs it to the `Unmatched` sheet instead of
+   guessing — check that sheet periodically and add missing people.
 5. Deploy → New deployment → type **Web app**. Execute as **Me**, who has
    access **Anyone**. Copy the deployment URL (ends in `/exec`).
 6. Once you know your GitHub Pages URL (step 3 below), find the `setupSiteUrl`
