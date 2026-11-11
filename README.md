@@ -157,7 +157,14 @@ on a container binding.
 4. Open the **Owners** sheet and pre-fill `Name` + `Email` for everyone you
    might tag with `@Name` in a MoM. If `scanMoMEmails` sees a tag it can't
    match to a name here, it logs it to the `Unmatched` sheet instead of
-   guessing — check that sheet periodically and add missing people.
+   guessing — and emails you (once per item, naming the tag) so a missing
+   person is noticed straight away. Once you've added them (Name, Email, Pilot
+   ticked), run **Task Tracker → Push unmatched tasks to Tracker** in the
+   Sheet: it moves every Unmatched task whose tag now matches someone into the
+   Tracker and leaves everything still unmatched exactly as it was. It only
+   ever runs when you click it. The moved tasks start unnotified, so the owner
+   is emailed on the next notification run (or when you send their welcome
+   email from the same menu).
 5. Deploy → New deployment → type **Web app**. Execute as **Me**, who has
    access **Anyone**. Copy the deployment URL (ends in `/exec`).
 6. Once you know your GitHub Pages URL (step 3 below), find the `setupSiteUrl`

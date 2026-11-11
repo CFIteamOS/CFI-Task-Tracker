@@ -327,6 +327,11 @@ function scanMoMEmails() {
   const headerRow = getHeaderRow_(tracker);
   const existingKeys = new Set(getColumnValues_(tracker, 'SourceKey').filter(String));
 
+  // Read-only: what's already in Unmatched, used ONLY so the admin alert below
+  // fires once per item. The scan still logs to Unmatched exactly as before.
+  const alreadyLogged = getUnmatchedKeySet_(ss);
+  const newlyUnmatched = [];
+
   const threads = GmailApp.search(getMomSearchQuery_());
   const newRows = [];
 
@@ -344,6 +349,11 @@ function scanMoMEmails() {
 
         const owner = resolveOwner_(ss, action.nameTag);
         if (!owner) {
+          const key = unmatchedKey_(action.nameTag, action.task, meetingTitle, momDate);
+          if (!alreadyLogged.has(key)) {
+            alreadyLogged.add(key);
+            newlyUnmatched.push({ tag: action.nameTag, task: action.task, meeting: meetingTitle });
+          }
           logUnmatched_(ss, action.nameTag, action.task, meetingTitle, momDate);
           return;
         }
@@ -369,6 +379,9 @@ function scanMoMEmails() {
   if (newRows.length) {
     tracker.getRange(tracker.getLastRow() + 1, 1, newRows.length, headerRow.length).setValues(newRows);
   }
+
+  // Last, so a failure to email can never stop the tasks above being filed.
+  if (newlyUnmatched.length) notifyAdminOfUnmatched_(newlyUnmatched);
 }
 
 // Format (one bullet per line, under a "[Actions]" heading):
@@ -482,6 +495,166 @@ function resolveOwner_(ss, nameTag) {
 function logUnmatched_(ss, nameTag, task, meetingTitle, momDate) {
   const sheet = ensureSheet_(ss, UNMATCHED_SHEET, UNMATCHED_HEADERS);
   sheet.appendRow([nameTag, task, meetingTitle, momDate, new Date()]);
+}
+
+// ---------- unmatched tags: tell the admin, and push them across by hand ----------
+
+function dayKey_(value) {
+  if (value instanceof Date && !isNaN(value)) {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  }
+  return String(value == null ? '' : value).slice(0, 10);
+}
+
+// Same tag + task + meeting + day = the same unmatched item.
+function unmatchedKey_(nameTag, task, meeting, momDate) {
+  return [String(nameTag || '').trim().toLowerCase(), String(task || '').trim(), String(meeting || '').trim(), dayKey_(momDate)].join('|');
+}
+
+function getUnmatchedKeySet_(ss) {
+  const sheet = ensureSheet_(ss, UNMATCHED_SHEET, UNMATCHED_HEADERS);
+  const keys = new Set();
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) keys.add(unmatchedKey_(data[i][0], data[i][1], data[i][2], data[i][3]));
+  return keys;
+}
+
+// Emails the admin when an @tag in a MoM matches nobody — before this the task
+// just sat in Unmatched and nobody knew to add the person. The scan only
+// passes in items it hasn't seen in Unmatched before, so this isn't repeated
+// daily for the same item.
+function notifyAdminOfUnmatched_(items) {
+  const adminEmail = Session.getEffectiveUser().getEmail();
+  if (!adminEmail || !items.length) return;
+
+  const byTag = {};
+  items.forEach(it => { (byTag[it.tag] = byTag[it.tag] || []).push(it); });
+  const tags = Object.keys(byTag);
+  const sheetUrl = getSpreadsheet_().getUrl();
+
+  const describe = tag => {
+    const list = byTag[tag];
+    return `"${tag}" - ${list.length} task(s), e.g. ${list[0].task} (${list[0].meeting})`;
+  };
+  const fix = 'To fix: add the person to the Owners sheet (Name, Email, tick Pilot), then in the sheet run ' +
+    'Task Tracker > Push unmatched tasks to Tracker.';
+
+  MailApp.sendEmail({
+    to: adminEmail,
+    subject: `Task Tracker: ${tags.length} tag(s) in a MoM didn't match anyone`,
+    body: `These @tags didn't match anyone in the Owners sheet, so their tasks are sitting in the Unmatched sheet:\n\n` +
+      `${tags.map(t => `- ${describe(t)}`).join('\n')}\n\n${fix}\n\n${sheetUrl}`,
+    htmlBody: `<p>These @tags didn't match anyone in the Owners sheet, so their tasks are sitting in the Unmatched sheet:</p>` +
+      buildItemsListHtml_(tags, t => escapeHtml_(describe(t))) +
+      `<p>${escapeHtml_(fix)}</p><p><a href="${sheetUrl}">Open the sheet</a></p>`
+  });
+}
+
+// Moves tasks from the Unmatched sheet into the Tracker for every tag that
+// matches someone in the Owners sheet NOW (matching is exactly what the scan
+// uses — nothing smarter). Run by hand from the menu; nothing calls it
+// automatically. Moved rows are removed from Unmatched; rows that still match
+// nobody are left completely untouched. Filed tasks start unnotified, so the
+// normal notification run (or a welcome email sent from the menu) tells the
+// owner. The Unmatched sheet can hold the same item several times (the scan
+// re-logs it while the MoM is inside the search window), so an item filed
+// here is filed once — its repeat rows are cleared along with it.
+function pushUnmatchedToTracker_(ss) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const summary = { filed: 0, byOwner: {}, repeatRowsCleared: 0, stillUnmatched: {} };
+    const unmatched = ensureSheet_(ss, UNMATCHED_SHEET, UNMATCHED_HEADERS);
+    const lastRow = unmatched.getLastRow();
+    if (lastRow < 2) return summary;
+
+    const tracker = ensureSheet_(ss, TRACKER_SHEET, TRACKER_HEADERS);
+    const headerRow = getHeaderRow_(tracker);
+    const numCols = UNMATCHED_HEADERS.length;
+    const rows = unmatched.getRange(2, 1, lastRow - 1, numCols).getValues();
+
+    const ownerByTag = {}; // resolve each distinct tag once, not once per row
+    const resolve = tag => {
+      const k = String(tag).trim().toLowerCase();
+      if (!(k in ownerByTag)) ownerByTag[k] = resolveOwner_(ss, String(tag).trim());
+      return ownerByTag[k];
+    };
+
+    const keep = [];
+    const filedKeys = new Set();
+    const stillSeen = new Set();
+    const newTrackerRows = [];
+
+    rows.forEach(row => {
+      const nameTag = row[0], task = row[1], meeting = row[2], momDate = row[3];
+      if (!String(nameTag).trim() && !String(task).trim()) return; // blank row
+
+      const owner = resolve(nameTag);
+      if (!owner) {
+        keep.push(row);
+        const k = unmatchedKey_(nameTag, task, meeting, momDate);
+        if (!stillSeen.has(k)) {
+          stillSeen.add(k);
+          summary.stillUnmatched[nameTag] = (summary.stillUnmatched[nameTag] || 0) + 1;
+        }
+        return;
+      }
+
+      const filedKey = unmatchedKey_(owner.name, task, meeting, momDate);
+      if (filedKeys.has(filedKey)) { summary.repeatRowsCleared++; return; }
+      filedKeys.add(filedKey);
+
+      newTrackerRows.push(buildRowByHeaders_(headerRow, {
+        TaskID: generateTaskId_(tracker),
+        Owner: owner.name,
+        OwnerEmail: owner.email,
+        Task: task,
+        Meeting: meeting,
+        'MoM Date': momDate instanceof Date ? momDate : new Date(),
+        Status: STATUS.PENDING,
+        'Reminder Count': 0,
+        'Last Updated': new Date(),
+        Notified: false,
+        SourceKey: `unmatched-push:${Utilities.getUuid()}`
+      }));
+      summary.filed++;
+      summary.byOwner[owner.name] = (summary.byOwner[owner.name] || 0) + 1;
+    });
+
+    // Tracker first, then Unmatched. Unmatched is rewritten keep-rows-first and
+    // the leftover tail cleared afterwards, so a failure part-way can leave a
+    // stale row behind but can never lose a task.
+    if (newTrackerRows.length) {
+      tracker.getRange(tracker.getLastRow() + 1, 1, newTrackerRows.length, headerRow.length).setValues(newTrackerRows);
+    }
+    if (keep.length !== rows.length) {
+      if (keep.length) unmatched.getRange(2, 1, keep.length, numCols).setValues(keep);
+      unmatched.getRange(keep.length + 2, 1, rows.length - keep.length, numCols).clearContent();
+    }
+    return summary;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// Menu: Task Tracker > Push unmatched tasks to Tracker
+function pushUnmatchedFromMenu() {
+  const summary = pushUnmatchedToTracker_(getSpreadsheet_());
+  const owners = Object.keys(summary.byOwner);
+  const still = Object.keys(summary.stillUnmatched);
+
+  const lines = [`Moved ${summary.filed} task(s) from Unmatched to the Tracker.`];
+  owners.forEach(o => lines.push(`- ${o}: ${summary.byOwner[o]}`));
+  if (summary.repeatRowsCleared) lines.push('', `Cleared ${summary.repeatRowsCleared} repeat row(s) of tasks just moved.`);
+  if (summary.filed) lines.push('', 'They are emailed on the next notification run, or when you send their welcome email from this menu.');
+  if (still.length) {
+    lines.push('', 'Still unmatched (left in Unmatched, untouched):');
+    still.slice(0, 25).forEach(t => lines.push(`- ${t} (${summary.stillUnmatched[t]} task(s))`));
+    if (still.length > 25) lines.push(`...and ${still.length - 25} more`);
+  } else if (!summary.filed) {
+    lines.push('', 'Nothing in Unmatched matches anyone in Owners yet.');
+  }
+  SpreadsheetApp.getUi().alert(lines.join('\n'));
 }
 
 function generateTaskId_(tracker) {
@@ -662,6 +835,7 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Task Tracker')
     .addItem('Send welcome email...', 'showWelcomeDialog')
+    .addItem('Push unmatched tasks to Tracker', 'pushUnmatchedFromMenu')
     .addItem('Generate missing tokens', 'generateMissingTokens')
     .addItem('Change admin password...', 'changeAdminPassword')
     .addToUi();
