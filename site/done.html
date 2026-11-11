@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mark done</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" type="image/png" href="curefoods-logo.png">
+  <link rel="apple-touch-icon" href="curefoods-logo.png">
+  <meta name="theme-color" content="#10286b">
+  <meta name="robots" content="noindex">
+  <script src="theme.js"></script>
+</head>
+<body>
+  <div class="brand-header">
+    <img src="curefoods-logo.png" alt="Curefoods" onerror="this.style.display='none'">
+    <span>Task Tracker</span>
+    <button id="themeToggle" class="theme-toggle" aria-label="Toggle dark/light mode"></button>
+  </div>
+  <div class="wrap">
+    <div class="card done-card" id="result" aria-live="polite">
+      <div class="loading">Marking as done...</div>
+    </div>
+  </div>
+  <script src="config.js"></script>
+  <script src="done.js"></script>
+</body>
+</html>

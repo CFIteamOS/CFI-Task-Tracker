@@ -692,3 +692,57 @@ tr.row-new td:first-child {
     display: none;
   }
 }
+
+/* One-click "Mark done" landing page (done.html) */
+.done-card {
+  text-align: center;
+  padding: 36px 24px;
+  margin-top: 24px;
+}
+
+.done-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 14px;
+  border-radius: 50%;
+  background: var(--done);
+  color: #fff;
+  font-size: 1.9rem;
+  line-height: 56px;
+  font-weight: 700;
+}
+
+.done-icon-bad { background: var(--blocked); }
+.done-icon-neutral { background: var(--muted); }
+
+.done-title {
+  font-size: 1.35rem;
+  margin: 0 0 8px;
+}
+
+.done-task {
+  font-weight: 600;
+  margin: 0 0 6px;
+  word-break: break-word;
+}
+
+.done-detail {
+  color: var(--muted);
+  margin: 0 0 20px;
+}
+
+.done-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.done-link {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.done-link:hover { text-decoration: underline; }

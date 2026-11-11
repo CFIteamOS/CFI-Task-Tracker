@@ -51,7 +51,10 @@ const TRACKER_HEADERS = [
 // only ever email owners with this checked. Unchecked owners' tasks still
 // get filed by scanMoMEmails as normal, just silently, until they're
 // switched on (nothing to re-migrate or re-send when that happens).
-const OWNERS_HEADERS = ['Name', 'Email', 'Token', 'WelcomeSent', 'Pilot'];
+// LastSeen: stamped whenever the owner opens their checklist (or a Mark-done
+// link) — the only way to tell "never opened it" from "opened it and didn't
+// update". Always last, so the positions of the columns before it never shift.
+const OWNERS_HEADERS = ['Name', 'Email', 'Token', 'WelcomeSent', 'Pilot', 'LastSeen'];
 const UNMATCHED_HEADERS = ['Name Tag', 'Task', 'Meeting', 'MoM Date', 'Seen At'];
 const COMMENTS_HEADERS = ['TaskID', 'Author', 'Text', 'Timestamp', 'CommentID'];
 
@@ -681,12 +684,24 @@ function escapeHtml_(str) {
     .replace(/>/g, '&gt;');
 }
 
-function buildItemsListHtml_(items, formatItem) {
+// doneUrl (optional): a function item -> URL. When given, each task that has
+// an id gets a "Mark done" link under it that completes it in one click.
+function buildItemsListHtml_(items, formatItem, doneUrl) {
   const format = formatItem || (it => escapeHtml_(it.task));
+  const doneLink = it => (doneUrl && it.id)
+    ? `<div style="margin-top:4px;"><a href="${doneUrl(it)}" style="display:inline-block; font-size:0.85em; color:#16a34a; text-decoration:none; border:1px solid #16a34a; border-radius:4px; padding:1px 9px;">&#10003; Mark done</a></div>`
+    : '';
   return '<ul style="margin:8px 0 16px; padding-left:20px;">' +
-    items.map(it => `<li style="margin-bottom:6px;">${format(it)}${it.meeting ?
-      `<div style="font-style:italic; color:#666; font-size:0.85em;">${escapeHtml_(it.meeting)}</div>` : ''}</li>`).join('') +
+    items.map(it => `<li style="margin-bottom:10px;">${format(it)}${it.meeting ?
+      `<div style="font-style:italic; color:#666; font-size:0.85em;">${escapeHtml_(it.meeting)}</div>` : ''}${doneLink(it)}</li>`).join('') +
     '</ul>';
+}
+
+// Builds the per-task one-click link for one owner: it opens site/done.html,
+// which marks that single task done (see site/done.js for why the update is
+// done by that page rather than by the link itself).
+function makeDoneUrl_(baseUrl, token) {
+  return it => `${baseUrl}done.html?token=${encodeURIComponent(token)}&id=${encodeURIComponent(it.id)}`;
 }
 
 // ---------- step 2: notify owners (welcome, or a "new tasks" nudge) ----------
@@ -707,7 +722,7 @@ function notifyOwners() {
     if (new Date(trackerData[i][col('MoM Date')]) > notifyCutoff) continue; // not old enough yet, catch it on a later run
     const owner = trackerData[i][col('Owner')];
     if (!pendingByOwner[owner]) pendingByOwner[owner] = [];
-    pendingByOwner[owner].push({ row: i + 1, task: trackerData[i][col('Task')], meeting: trackerData[i][col('Meeting')] });
+    pendingByOwner[owner].push({ row: i + 1, id: trackerData[i][col('TaskID')], task: trackerData[i][col('Task')], meeting: trackerData[i][col('Meeting')] });
   }
 
   const ownersData = owners.getDataRange().getValues();
@@ -729,7 +744,7 @@ function notifyOwners() {
     const theirTasks = [];
     for (let r = 1; r < trackerData.length; r++) {
       if (trackerData[r][col('Owner')] === name) {
-        theirTasks.push({ row: r + 1, task: trackerData[r][col('Task')], meeting: trackerData[r][col('Meeting')] });
+        theirTasks.push({ row: r + 1, id: trackerData[r][col('TaskID')], task: trackerData[r][col('Task')], meeting: trackerData[r][col('Meeting')] });
       }
     }
     if (theirTasks.length) pendingByOwner[name] = theirTasks;
@@ -763,7 +778,7 @@ function notifyOwners() {
             `<p>You've been recently tagged with some action items! ` +
             `Bookmark this link — it always shows your current, live checklist:</p>` +
             `<p><a href="${link}">${escapeHtml_(link)}</a></p>` +
-            `<p>New items right now:</p>${buildItemsListHtml_(items)}` +
+            `<p>New items right now:</p>${buildItemsListHtml_(items, undefined, makeDoneUrl_(baseUrl, token))}` +
             `<p>Just tick things off (or mark them In Progress / Blocked / Revised Timeline) as you go.</p>`
         });
         owners.getRange(i + 1, welcomeCol + 1).setValue(true);
@@ -779,7 +794,7 @@ function notifyOwners() {
             `View your full checklist here:\n${link}`,
           htmlBody: `<p>Hi ${escapeHtml_(ownerName)},</p>` +
             `<p><strong>New tasks have been added!</strong></p>` +
-            buildItemsListHtml_(items) +
+            buildItemsListHtml_(items, undefined, makeDoneUrl_(baseUrl, token)) +
             `<p>View your full checklist here: <a href="${link}">${escapeHtml_(link)}</a></p>`
         });
       }
@@ -836,9 +851,104 @@ function onOpen() {
     .createMenu('Task Tracker')
     .addItem('Send welcome email...', 'showWelcomeDialog')
     .addItem('Push unmatched tasks to Tracker', 'pushUnmatchedFromMenu')
+    .addItem('Build adoption report', 'buildAdoptionReport')
     .addItem('Generate missing tokens', 'generateMissingTokens')
     .addItem('Change admin password...', 'changeAdminPassword')
     .addToUi();
+}
+
+// ---------- adoption report ----------
+
+const ADOPTION_SHEET = 'Adoption';
+const ADOPTION_ACTIVE_DAYS = 14; // opened their checklist within this many days = "Active"
+
+// Rebuilds the "Adoption" sheet: one row per owner who has any tasks, worst
+// first, so you can see at a glance WHO isn't engaging and in which way —
+// never opened their link, opened it once and went quiet, or isn't invited
+// yet. Safe to run as often as you like; it only rewrites its own sheet.
+function buildAdoptionReport() {
+  const ss = getSpreadsheet_();
+  const owners = ensureSheet_(ss, OWNERS_SHEET, OWNERS_HEADERS);
+  const tracker = ensureSheet_(ss, TRACKER_SHEET, TRACKER_HEADERS);
+  const ownersData = owners.getDataRange().getValues();
+  const trackerData = tracker.getDataRange().getValues();
+  const oc = n => ownersData[0].indexOf(n);
+  const tc = n => trackerData[0].indexOf(n);
+
+  // Tasks joined to people by EMAIL, not name: older tasks sit under names
+  // like "rnd" while the Owners row says something else.
+  const stats = {};
+  for (let i = 1; i < trackerData.length; i++) {
+    const email = String(trackerData[i][tc('OwnerEmail')] || '').trim().toLowerCase();
+    if (!email) continue;
+    const s = stats[email] || (stats[email] = { total: 0, done: 0, open: 0, blocked: 0, maxReminders: 0 });
+    const status = trackerData[i][tc('Status')];
+    s.total++;
+    if (status === STATUS.DONE) {
+      s.done++;
+    } else {
+      s.open++;
+      if (status === STATUS.BLOCKED) s.blocked++;
+      s.maxReminders = Math.max(s.maxReminders, Number(trackerData[i][tc('Reminder Count')]) || 0);
+    }
+  }
+
+  const ORDER = { 'Never opened': 0, 'Gone quiet': 1, 'Active': 2, 'Not invited yet': 3 };
+  const now = Date.now();
+  const rows = [];
+  for (let i = 1; i < ownersData.length; i++) {
+    const name = ownersData[i][oc('Name')];
+    const email = String(ownersData[i][oc('Email')] || '').trim();
+    const s = stats[email.toLowerCase()];
+    if (!name || !s) continue; // nobody with tasks, nothing to adopt
+
+    const invited = ownersData[i][oc('Pilot')] === true && ownersData[i][oc('WelcomeSent')] === true;
+    const lastSeen = oc('LastSeen') === -1 ? '' : ownersData[i][oc('LastSeen')];
+    const seenMs = lastSeen instanceof Date ? lastSeen.getTime() : 0;
+
+    let state;
+    if (!invited) state = 'Not invited yet';
+    else if (!seenMs) state = 'Never opened';
+    else if (now - seenMs <= ADOPTION_ACTIVE_DAYS * 86400000) state = 'Active';
+    else state = 'Gone quiet';
+
+    rows.push([name, email, state, s.open, s.done, s.total, s.total ? s.done / s.total : 0, s.blocked, s.maxReminders, seenMs ? lastSeen : '']);
+  }
+  rows.sort((a, b) => (ORDER[a[2]] - ORDER[b[2]]) || (b[3] - a[3]));
+
+  const counts = { 'Never opened': 0, 'Gone quiet': 0, 'Active': 0, 'Not invited yet': 0 };
+  rows.forEach(r => { counts[r[2]]++; });
+
+  const since = PropertiesService.getScriptProperties().getProperty('LASTSEEN_TRACKING_SINCE');
+  const tz = Session.getScriptTimeZone();
+  const trackingNote = since
+    ? `Opens have been recorded since ${Utilities.formatDate(new Date(since), tz, 'd MMM yyyy')} - "Never opened" means not since then.`
+    : 'Open tracking is on but nobody has opened their link since it was switched on, so everyone invited shows as "Never opened".';
+
+  let sheet = ss.getSheetByName(ADOPTION_SHEET);
+  if (!sheet) sheet = ss.insertSheet(ADOPTION_SHEET);
+  sheet.clear();
+
+  const header = ['Owner', 'Email', 'Adoption', 'Open tasks', 'Done', 'Total', '% done', 'Blocked', 'Reminders sent (most on one task)', 'Last opened'];
+  const HEADER_ROW = 9;
+  sheet.getRange(1, 1).setValue('Adoption report').setFontWeight('bold').setFontSize(14);
+  sheet.getRange(2, 1).setValue(`Generated ${Utilities.formatDate(new Date(), tz, 'd MMM yyyy, h:mm a')}. ${trackingNote}`);
+  sheet.getRange(4, 1, 4, 2).setValues([
+    [`Never opened (invited, link not opened)`, counts['Never opened']],
+    [`Gone quiet (last opened over ${ADOPTION_ACTIVE_DAYS} days ago)`, counts['Gone quiet']],
+    [`Active (opened in the last ${ADOPTION_ACTIVE_DAYS} days)`, counts['Active']],
+    ['Not invited yet (no welcome sent, or Pilot not ticked)', counts['Not invited yet']]
+  ]);
+  sheet.getRange(HEADER_ROW, 1, 1, header.length).setValues([header]).setFontWeight('bold').setBackground('#e8eaf0');
+  if (rows.length) {
+    sheet.getRange(HEADER_ROW + 1, 1, rows.length, header.length).setValues(rows);
+    sheet.getRange(HEADER_ROW + 1, 7, rows.length, 1).setNumberFormat('0%');
+    sheet.getRange(HEADER_ROW + 1, 10, rows.length, 1).setNumberFormat('d mmm yyyy, h:mm AM/PM');
+  }
+  sheet.setFrozenRows(HEADER_ROW);
+  sheet.autoResizeColumns(1, header.length);
+  ss.setActiveSheet(sheet);
+  ss.toast(`Adoption report updated: ${rows.length} people with tasks.`, 'Task Tracker', 6);
 }
 
 // Fills in a Token for every Owners row that doesn't have one yet, without
@@ -939,7 +1049,7 @@ function sendWelcomeCore_(ownerNames) {
       const items = [];
       for (let r = 1; r < trackerData.length; r++) {
         if (trackerData[r][tcol('Owner')] === ownerName) {
-          items.push({ row: r + 1, task: trackerData[r][tcol('Task')] });
+          items.push({ row: r + 1, id: trackerData[r][tcol('TaskID')], task: trackerData[r][tcol('Task')] });
         }
       }
 
@@ -952,7 +1062,7 @@ function sendWelcomeCore_(ownerNames) {
         htmlBody: `<p>Hi ${escapeHtml_(ownerName)},</p>` +
           `<p>Here's your permanent link to your action items checklist:</p>` +
           `<p><a href="${link}">${escapeHtml_(link)}</a></p>` +
-          (items.length ? `<p>Current items:</p>${buildItemsListHtml_(items)}` : '') +
+          (items.length ? `<p>Current items:</p>${buildItemsListHtml_(items, undefined, makeDoneUrl_(baseUrl, token))}` : '') +
           `<p>Just tick things off (or mark them In Progress / Blocked / Revised Timeline) as you go.</p>`
       });
 
@@ -1003,7 +1113,7 @@ function sendReminders() {
 
     const owner = data[i][col('Owner')];
     if (!dueByOwner[owner]) dueByOwner[owner] = [];
-    dueByOwner[owner].push({ row: i + 1, task: data[i][col('Task')], status, meeting: data[i][col('Meeting')] });
+    dueByOwner[owner].push({ row: i + 1, id: data[i][col('TaskID')], task: data[i][col('Task')], status, meeting: data[i][col('Meeting')] });
   }
 
   const ownersData = owners.getDataRange().getValues();
@@ -1034,7 +1144,7 @@ function sendReminders() {
           `Update your status here:\n${link}`,
         htmlBody: `<p>Hi ${escapeHtml_(ownerName)},</p>` +
           `<p>Still open on your checklist:</p>` +
-          buildItemsListHtml_(items, it => `${escapeHtml_(it.task)} (${escapeHtml_(it.status)})`) +
+          buildItemsListHtml_(items, it => `${escapeHtml_(it.task)} (${escapeHtml_(it.status)})`, makeDoneUrl_(baseUrl, token)) +
           `<p>Update your status here: <a href="${link}">${escapeHtml_(link)}</a></p>`
       });
 
@@ -1092,11 +1202,48 @@ function resolveOwnerNameByToken_(ss, token) {
   return null;
 }
 
+// Like resolveOwnerNameByToken_, but also returns where the owner's row is and
+// when they were last seen, so the caller can stamp it without a second read.
+function findOwnerByToken_(ss, token) {
+  const owners = ensureSheet_(ss, OWNERS_SHEET, OWNERS_HEADERS); // also adds the LastSeen header if missing
+  const data = owners.getDataRange().getValues();
+  const header = data[0];
+  const tokenCol = header.indexOf('Token');
+  const nameCol = header.indexOf('Name');
+  const lastSeenCol = header.indexOf('LastSeen');
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][tokenCol] === token) {
+      return { name: data[i][nameCol], sheet: owners, row: i + 1, lastSeenCol, lastSeen: lastSeenCol === -1 ? null : data[i][lastSeenCol] };
+    }
+  }
+  return null;
+}
+
+const LASTSEEN_THROTTLE_MS = 10 * 60 * 1000; // at most one write per owner per 10 minutes
+
+// Stamps the owner's LastSeen. Never allowed to break loading the checklist,
+// and remembers when tracking began so the adoption report can say how far
+// back "never opened" actually reaches.
+function recordLastSeen_(owner) {
+  try {
+    if (owner.lastSeenCol === -1) return;
+    const prev = owner.lastSeen instanceof Date ? owner.lastSeen.getTime() : 0;
+    if (Date.now() - prev < LASTSEEN_THROTTLE_MS) return;
+    owner.sheet.getRange(owner.row, owner.lastSeenCol + 1).setValue(new Date());
+    const props = PropertiesService.getScriptProperties();
+    if (!props.getProperty('LASTSEEN_TRACKING_SINCE')) props.setProperty('LASTSEEN_TRACKING_SINCE', new Date().toISOString());
+  } catch (err) {
+    // tracking is best-effort
+  }
+}
+
 function getTasksForToken_(token) {
   if (!token) return { error: 'Missing token' };
   const ss = getSpreadsheet_();
-  const ownerName = resolveOwnerNameByToken_(ss, token);
-  if (!ownerName) return { error: 'Invalid token' };
+  const found = findOwnerByToken_(ss, token);
+  if (!found) return { error: 'Invalid token' };
+  const ownerName = found.name;
+  recordLastSeen_(found);
 
   const tracker = ensureSheet_(ss, TRACKER_SHEET, TRACKER_HEADERS);
   const data = tracker.getDataRange().getValues();

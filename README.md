@@ -49,9 +49,21 @@ can update themselves. You get a password-gated admin dashboard.
    them their permanent link plus their current task list immediately,
    regardless of whether they were auto-welcomed already. Handy right after
    a bulk migration, or if someone lost their original email.
+
+   **One-click "Mark done".** In every email (welcome, new tasks, weekly
+   reminder) each task has its own *Mark done* link. It opens
+   `site/done.html`, which marks that one task done, says how many other items
+   are open, and offers **Undo** (restores the exact previous status). The
+   update is made by the page's own JavaScript rather than by the link, so a
+   mail scanner that merely fetches the link — Outlook Safe Links and the like
+   — can't mark tasks done by accident. The plain-text fallback of each email
+   has no such links; only the HTML part does.
 3. Owners open their link, check tasks off or mark them In Progress / Blocked /
    Revised Timeline — this calls the Apps Script Web App directly and updates
-   the Sheet live.
+   the Sheet live. Opening the checklist (or a Mark-done link) stamps a
+   `LastSeen` column on the `Owners` sheet — at most once per 10 minutes per
+   person — which is what lets the adoption report tell "never opened it" from
+   "opened it and went quiet".
 4. `sendReminders` runs every 7 days and nags anyone not Done/Blocked (honoring
    revised timelines), linking to the same permanent checklist.
 5. You open `admin.html`, enter your password, and see every owner's status in
@@ -72,6 +84,16 @@ can update themselves. You get a password-gated admin dashboard.
      banner + a "New comments" filter pill — tracked per browser (via
      localStorage), not per person, since there's no separate login per
      admin.
+   - See who's actually using it: **Task Tracker → Build adoption report** in
+     the Sheet writes an `Adoption` tab, one row per person who has tasks,
+     worst first — *Never opened* (invited, link never opened), *Gone quiet*
+     (last opened over 14 days ago), *Active*, or *Not invited yet* (no welcome
+     sent or Pilot not ticked) — with their open/done/blocked counts and the
+     most reminders any one task has had. Opens are only recorded from the day
+     tracking went live (the tab says which), so "Never opened" means not
+     since then. Tasks are matched to people by email, not name, so older
+     tasks filed under a different name still count. It only rewrites its own
+     tab.
 6. Owners can also add their own tasks from their checklist page (no owner
    picker needed — it's always added under them), and their checklist page
    shows their own completion progress bar. They can leave comments on any of
